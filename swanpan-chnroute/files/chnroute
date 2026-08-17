@@ -1,0 +1,609 @@
+#!/bin/sh
+# shellcheck disable=SC3043 # OpenWrt /bin/sh is BusyBox ash and supports local.
+
+set -u
+
+PROGRAM_NAME='chnroute'
+SOURCE_REPOSITORY='https://github.com/erning/chnroute.git'
+SOURCE_RAW_BASE='https://raw.githubusercontent.com/erning/chnroute'
+SOURCE_REF='refs/heads/dist'
+
+STATE_DIR='/etc/chnroute'
+MANIFEST_NAME='manifest.json'
+LOCK_FILE='/var/lock/chnroute.lock'
+
+IPSET_TYPE='hash:net'
+IPSET_HASHSIZE='8192'
+IPSET_MAXELEM='65536'
+
+# Each item is ipset-name:ipset-family:source-file.
+SET_SPECS='chnroute:inet:chnroute.txt
+chnroute6:inet6:chnroute6.txt
+non-chnroute:inet:non-chnroute.txt
+non-chnroute6:inet6:non-chnroute6.txt
+china-telecom:inet:china-telecom.txt
+china-telecom6:inet6:china-telecom6.txt
+china-mobile:inet:china-mobile.txt
+china-mobile6:inet6:china-mobile6.txt
+china-unicom:inet:china-unicom.txt
+china-unicom6:inet6:china-unicom6.txt
+china-other:inet:china-other.txt
+china-other6:inet6:china-other6.txt
+private:inet:private.txt
+private6:inet6:private6.txt
+special:inet:special.txt
+special6:inet6:special6.txt'
+
+TMP_DOWNLOAD_DIR=''
+TMP_RESTORE=''
+STAGED_STATE_DIR=''
+BACKUP_STATE_DIR=''
+SOURCE_COMMIT=''
+SWAPPED_SETS=''
+STAGE_SUFFIX="_tmp_$$"
+
+log() {
+	logger -t "$PROGRAM_NAME" -- "$*"
+	printf '%s: %s\n' "$PROGRAM_NAME" "$*"
+}
+
+fail() {
+	log "ERROR: $*" >&2
+	exit 1
+}
+
+usage() {
+	cat <<'EOF'
+Usage: chnroute <command>
+
+Commands:
+  fetch   Download, validate, and persist all IPv4 and IPv6 CIDR lists.
+  apply   Atomically load all persisted CIDR lists into same-named ipsets.
+  update  Fetch and apply all lists only when the downloaded bundle changed.
+  help    Show this help text.
+EOF
+}
+
+parse_spec() {
+	local spec="$1"
+	local remainder
+
+	SET_NAME="${spec%%:*}"
+	remainder="${spec#*:}"
+	SET_FAMILY="${remainder%%:*}"
+	SOURCE_NAME="${remainder#*:}"
+}
+
+cleanup_bundle_dir() {
+	local directory="$1"
+	local spec
+
+	[ -n "$directory" ] && [ -d "$directory" ] || return 0
+
+	rm -f -- "$directory/$MANIFEST_NAME" "$directory/info-refs" \
+		"$directory/china.txt"
+	for spec in $SET_SPECS; do
+		parse_spec "$spec"
+		rm -f -- "$directory/$SOURCE_NAME"
+	done
+	rmdir "$directory" >/dev/null 2>&1 || true
+}
+
+destroy_staged_sets() {
+	local spec
+
+	for spec in $SET_SPECS; do
+		parse_spec "$spec"
+		ipset -q destroy "${SET_NAME}${STAGE_SUFFIX}" >/dev/null 2>&1 || true
+	done
+}
+
+rollback_swaps() {
+	local set_name
+	local rollback_failed='0'
+
+	[ -n "$SWAPPED_SETS" ] || return 0
+
+	for set_name in $SWAPPED_SETS; do
+		if ! ipset swap "${set_name}${STAGE_SUFFIX}" "$set_name"; then
+			log "ERROR: failed to roll back ipset $set_name"
+			rollback_failed='1'
+		fi
+	done
+	SWAPPED_SETS=''
+	[ "$rollback_failed" = '0' ]
+}
+
+cleanup() {
+	if [ -n "$SWAPPED_SETS" ]; then
+		rollback_swaps || true
+	fi
+	destroy_staged_sets
+
+	[ -n "$TMP_RESTORE" ] && rm -f -- "$TMP_RESTORE"
+	[ -n "$TMP_DOWNLOAD_DIR" ] && cleanup_bundle_dir "$TMP_DOWNLOAD_DIR"
+	[ -n "$STAGED_STATE_DIR" ] && cleanup_bundle_dir "$STAGED_STATE_DIR"
+
+	if [ -n "$BACKUP_STATE_DIR" ] && [ -d "$BACKUP_STATE_DIR" ]; then
+		if [ ! -e "$STATE_DIR" ]; then
+			mv "$BACKUP_STATE_DIR" "$STATE_DIR" >/dev/null 2>&1 || true
+		fi
+		[ -d "$BACKUP_STATE_DIR" ] && cleanup_bundle_dir "$BACKUP_STATE_DIR"
+	fi
+}
+
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+require_commands() {
+	local command_name
+	for command_name in \
+		awk chmod cmp cp curl flock ipset logger mkdir mktemp mv rm rmdir \
+		sed sha256sum wc; do
+		command -v "$command_name" >/dev/null 2>&1 || \
+			fail "required command not found: $command_name"
+	done
+}
+
+acquire_lock() {
+	mkdir -p "${LOCK_FILE%/*}" || fail "cannot create ${LOCK_FILE%/*}"
+	exec 9>"$LOCK_FILE" || fail "cannot open lock file: $LOCK_FILE"
+	flock -n 9 || fail 'another chnroute command is already running'
+}
+
+new_temp_file() {
+	mktemp "/tmp/${PROGRAM_NAME}-$1.$$.XXXXXX" || \
+		fail "cannot create temporary $1 file"
+}
+
+new_temp_dir() {
+	mktemp -d "/tmp/${PROGRAM_NAME}-$1.$$.XXXXXX" || \
+		fail "cannot create temporary $1 directory"
+}
+
+download_file() {
+	local url="$1"
+	local output="$2"
+
+	curl \
+		--fail \
+		--silent \
+		--show-error \
+		--location \
+		--proto '=https' \
+		--connect-timeout 15 \
+		--max-time 60 \
+		--retry 2 \
+		--retry-delay 2 \
+		--output "$output" \
+		"$url" || fail "download failed: $url"
+}
+
+resolve_source_commit() {
+	local refs_file="$TMP_DOWNLOAD_DIR/info-refs"
+
+	log "resolving $SOURCE_REF from $SOURCE_REPOSITORY"
+	download_file \
+		"$SOURCE_REPOSITORY/info/refs?service=git-upload-pack" \
+		"$refs_file"
+
+	SOURCE_COMMIT="$(
+		sed -n \
+			's/^....\([0-9a-f]\{40\}\) refs\/heads\/dist$/\1/p' \
+			"$refs_file"
+	)"
+	case "$SOURCE_COMMIT" in
+		''|*"
+"*) fail "cannot resolve exactly one commit for $SOURCE_REF" ;;
+	esac
+}
+
+manifest_root_field() {
+	local manifest_path="$1"
+	local field_name="$2"
+
+	awk -v key="\"$field_name\"" '
+		index($0, key) {
+			value = $0
+			sub(/^[^:]*:[[:space:]]*/, "", value)
+			sub(/,[[:space:]]*$/, "", value)
+			sub(/^"/, "", value)
+			sub(/"$/, "", value)
+			print value
+			found = 1
+			exit
+		}
+		END { if (!found) exit 1 }
+	' "$manifest_path"
+}
+
+manifest_file_field() {
+	local manifest_path="$1"
+	local source_name="$2"
+	local field_name="$3"
+
+	awk -v target="\"$source_name\": {" -v key="\"$field_name\"" '
+		!in_file && index($0, target) {
+			in_file = 1
+			next
+		}
+		in_file && index($0, key) {
+			value = $0
+			sub(/^[^:]*:[[:space:]]*/, "", value)
+			sub(/,[[:space:]]*$/, "", value)
+			sub(/^"/, "", value)
+			sub(/"$/, "", value)
+			print value
+			found = 1
+			exit
+		}
+		END { if (!found) exit 1 }
+	' "$manifest_path"
+}
+
+validate_source_format() {
+	local source_path="$1"
+	local source_name="$2"
+	local family="$3"
+	local expected_count="$4"
+	local actual_count
+
+	actual_count="$({
+		awk -v family="$family" '
+			function reject(message) {
+				printf "invalid CIDR list at line %d: %s (%s)\n", \
+					NR, message, $0 > "/dev/stderr"
+				bad = 1
+				exit 1
+			}
+			{
+				if (seen[$0]++)
+					reject("duplicate prefix")
+
+				if (family == "inet") {
+					if ($0 !~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+$/)
+						reject("unexpected IPv4 CIDR format")
+
+					split($0, cidr, "/")
+					if ((cidr[2] + 0) < 0 || (cidr[2] + 0) > 32)
+						reject("IPv4 prefix length is outside 0..32")
+
+					split(cidr[1], octet, ".")
+					for (i = 1; i <= 4; i++) {
+						if ((octet[i] + 0) < 0 || (octet[i] + 0) > 255)
+							reject("IPv4 octet is outside 0..255")
+					}
+				} else {
+					if ($0 !~ /^[0-9A-Fa-f:]+\/[0-9]+$/)
+						reject("unexpected IPv6 CIDR format")
+
+					split($0, cidr, "/")
+					if (index(cidr[1], ":") == 0)
+						reject("IPv6 address does not contain a colon")
+					if ((cidr[2] + 0) < 0 || (cidr[2] + 0) > 128)
+						reject("IPv6 prefix length is outside 0..128")
+				}
+
+				count++
+			}
+			END {
+				if (bad)
+					exit 1
+				print count + 0
+			}
+		' "$source_path"
+	} 2>&1)" || fail "$source_name: $actual_count"
+
+	[ "$actual_count" = "$expected_count" ] || \
+		fail "$source_name contains $actual_count prefixes; expected $expected_count"
+}
+
+validate_bundle() {
+	local bundle_dir="$1"
+	local manifest_path="$bundle_dir/$MANIFEST_NAME"
+	local schema_version
+	local generator
+	local spec
+	local expected_sha
+	local expected_bytes
+	local expected_count
+	local actual_sha
+	local actual_bytes
+
+	[ -f "$manifest_path" ] || fail "manifest not found: $manifest_path"
+	schema_version="$(manifest_root_field "$manifest_path" schema_version)" || \
+		fail 'manifest does not contain schema_version'
+	generator="$(manifest_root_field "$manifest_path" generator)" || \
+		fail 'manifest does not contain generator'
+	[ "$schema_version" = '2' ] || \
+		fail "unsupported manifest schema: $schema_version"
+	[ "$generator" = 'chnroute' ] || \
+		fail "unexpected manifest generator: $generator"
+
+	for spec in $SET_SPECS; do
+		parse_spec "$spec"
+		SOURCE_PATH="$bundle_dir/$SOURCE_NAME"
+		[ -f "$SOURCE_PATH" ] || fail "source file not found: $SOURCE_PATH"
+
+		expected_sha="$(
+			manifest_file_field "$manifest_path" "$SOURCE_NAME" sha256
+		)" || fail "$SOURCE_NAME is missing sha256 in the manifest"
+		expected_bytes="$(
+			manifest_file_field "$manifest_path" "$SOURCE_NAME" bytes
+		)" || fail "$SOURCE_NAME is missing bytes in the manifest"
+		expected_count="$(
+			manifest_file_field "$manifest_path" "$SOURCE_NAME" prefixes
+		)" || fail "$SOURCE_NAME is missing prefixes in the manifest"
+
+		[ "$(printf '%s\n' "$expected_sha" | awk '
+			length($0) == 64 && $0 !~ /[^0-9a-f]/ { print "valid" }
+		')" = 'valid' ] || fail "$SOURCE_NAME has an invalid SHA-256 in the manifest"
+		case "$expected_bytes:$expected_count" in
+			*[!0-9:]*|:*|*:) fail "$SOURCE_NAME has invalid numeric metadata" ;;
+		esac
+
+		actual_sha="$(sha256sum "$SOURCE_PATH" | awk '{ print $1; exit }')"
+		[ "$actual_sha" = "$expected_sha" ] || \
+			fail "$SOURCE_NAME failed SHA-256 verification"
+		actual_bytes="$(wc -c <"$SOURCE_PATH" | awk '{ print $1; exit }')"
+		[ "$actual_bytes" = "$expected_bytes" ] || \
+			fail "$SOURCE_NAME contains $actual_bytes bytes; expected $expected_bytes"
+
+		validate_source_format \
+			"$SOURCE_PATH" "$SOURCE_NAME" "$SET_FAMILY" "$expected_count"
+	done
+}
+
+fetch_candidate() {
+	local manifest_url
+	local spec
+
+	TMP_DOWNLOAD_DIR="$(new_temp_dir download)"
+	resolve_source_commit
+
+	manifest_url="$SOURCE_RAW_BASE/$SOURCE_COMMIT/$MANIFEST_NAME"
+	log "downloading $MANIFEST_NAME from dist commit $SOURCE_COMMIT"
+	download_file "$manifest_url" "$TMP_DOWNLOAD_DIR/$MANIFEST_NAME"
+
+	for spec in $SET_SPECS; do
+		parse_spec "$spec"
+		download_file \
+			"$SOURCE_RAW_BASE/$SOURCE_COMMIT/$SOURCE_NAME" \
+			"$TMP_DOWNLOAD_DIR/$SOURCE_NAME"
+	done
+
+	validate_bundle "$TMP_DOWNLOAD_DIR"
+	log 'downloaded and verified 16 CIDR files'
+}
+
+bundle_is_unchanged() {
+	local candidate_dir="$1"
+	local spec
+
+	[ -d "$STATE_DIR" ] || return 1
+	cmp -s "$candidate_dir/$MANIFEST_NAME" "$STATE_DIR/$MANIFEST_NAME" || \
+		return 1
+	for spec in $SET_SPECS; do
+		parse_spec "$spec"
+		cmp -s "$candidate_dir/$SOURCE_NAME" "$STATE_DIR/$SOURCE_NAME" || \
+			return 1
+	done
+	return 0
+}
+
+persist_bundle() {
+	local source_dir="$1"
+	local state_parent="${STATE_DIR%/*}"
+	local spec
+
+	[ ! -L "$STATE_DIR" ] || fail "refusing to replace symlink: $STATE_DIR"
+	[ ! -e "$STATE_DIR" ] || [ -d "$STATE_DIR" ] || \
+		fail "state path is not a directory: $STATE_DIR"
+	mkdir -p "$state_parent" || fail "cannot create $state_parent"
+
+	STAGED_STATE_DIR="$(mktemp -d "${STATE_DIR}.new.$$.XXXXXX")" || \
+		fail 'cannot create staged state directory'
+	chmod 0755 "$STAGED_STATE_DIR" || fail 'cannot set state directory permissions'
+	cp "$source_dir/$MANIFEST_NAME" "$STAGED_STATE_DIR/$MANIFEST_NAME" || \
+		fail "cannot stage $MANIFEST_NAME"
+	chmod 0644 "$STAGED_STATE_DIR/$MANIFEST_NAME" || \
+		fail "cannot set $MANIFEST_NAME permissions"
+
+	for spec in $SET_SPECS; do
+		parse_spec "$spec"
+		cp "$source_dir/$SOURCE_NAME" "$STAGED_STATE_DIR/$SOURCE_NAME" || \
+			fail "cannot stage $SOURCE_NAME"
+		chmod 0644 "$STAGED_STATE_DIR/$SOURCE_NAME" || \
+			fail "cannot set $SOURCE_NAME permissions"
+	done
+
+	if [ -d "$STATE_DIR" ]; then
+		BACKUP_STATE_DIR="${STATE_DIR}.old.$$"
+		[ ! -e "$BACKUP_STATE_DIR" ] || \
+			fail "backup state path already exists: $BACKUP_STATE_DIR"
+		mv "$STATE_DIR" "$BACKUP_STATE_DIR" || \
+			fail "cannot move the previous state directory"
+	fi
+
+	if ! mv "$STAGED_STATE_DIR" "$STATE_DIR"; then
+		if [ -n "$BACKUP_STATE_DIR" ] && [ -d "$BACKUP_STATE_DIR" ]; then
+			mv "$BACKUP_STATE_DIR" "$STATE_DIR" >/dev/null 2>&1 || true
+		fi
+		fail "cannot install the new state directory"
+	fi
+	STAGED_STATE_DIR=''
+
+	if [ -n "$BACKUP_STATE_DIR" ]; then
+		cleanup_bundle_dir "$BACKUP_STATE_DIR"
+		BACKUP_STATE_DIR=''
+	fi
+	log 'persisted 16 CIDR files and manifest.json'
+}
+
+generate_restore() {
+	local bundle_dir="$1"
+	local spec
+	local staged_name
+
+	destroy_staged_sets
+	TMP_RESTORE="$(new_temp_file restore)"
+	: >"$TMP_RESTORE" || fail 'cannot initialize ipset restore file'
+
+	for spec in $SET_SPECS; do
+		parse_spec "$spec"
+		staged_name="${SET_NAME}${STAGE_SUFFIX}"
+		[ "${#staged_name}" -le 31 ] || \
+			fail "staged ipset name is too long: $staged_name"
+		printf 'create %s %s family %s hashsize %s maxelem %s\n' \
+			"$staged_name" "$IPSET_TYPE" "$SET_FAMILY" \
+			"$IPSET_HASHSIZE" "$IPSET_MAXELEM" >>"$TMP_RESTORE" || \
+			fail 'cannot generate ipset restore file'
+		awk -v set_name="$staged_name" \
+			'{ printf "add %s %s\n", set_name, $0 }' \
+			"$bundle_dir/$SOURCE_NAME" >>"$TMP_RESTORE" || \
+			fail 'cannot generate ipset restore file'
+	done
+}
+
+stage_sets() {
+	local bundle_dir="$1"
+	local manifest_path="$bundle_dir/$MANIFEST_NAME"
+	local spec
+	local expected_count
+	local loaded_count
+
+	validate_bundle "$bundle_dir"
+	generate_restore "$bundle_dir"
+	ipset restore <"$TMP_RESTORE" || fail 'failed to populate staged ipsets'
+
+	for spec in $SET_SPECS; do
+		parse_spec "$spec"
+		expected_count="$(
+			manifest_file_field "$manifest_path" "$SOURCE_NAME" prefixes
+		)" || fail "$SOURCE_NAME is missing prefixes in the manifest"
+		loaded_count="$(
+			ipset list "${SET_NAME}${STAGE_SUFFIX}" | \
+				awk '/^Number of entries:/ { print $4; exit }'
+		)"
+		[ "$loaded_count" = "$expected_count" ] || \
+			fail "staged ipset $SET_NAME contains $loaded_count entries; expected $expected_count"
+	done
+
+	rm -f -- "$TMP_RESTORE"
+	TMP_RESTORE=''
+}
+
+validate_live_set() {
+	local set_name="$1"
+	local family="$2"
+	local header
+
+	ipset list "$set_name" >/dev/null 2>&1 || return 1
+	header="$(ipset save "$set_name" | sed -n '1p')"
+
+	case "$header" in
+		"create $set_name $IPSET_TYPE family $family "*) return 0 ;;
+		*) fail "existing ipset has an incompatible type: $set_name" ;;
+	esac
+}
+
+ensure_live_sets() {
+	local spec
+
+	# Reject every incompatible existing set before creating any missing set.
+	for spec in $SET_SPECS; do
+		parse_spec "$spec"
+		if ipset list "$SET_NAME" >/dev/null 2>&1; then
+			validate_live_set "$SET_NAME" "$SET_FAMILY"
+		fi
+	done
+
+	for spec in $SET_SPECS; do
+		parse_spec "$spec"
+		if ! ipset list "$SET_NAME" >/dev/null 2>&1; then
+			ipset create "$SET_NAME" "$IPSET_TYPE" \
+				family "$SET_FAMILY" \
+				hashsize "$IPSET_HASHSIZE" \
+				maxelem "$IPSET_MAXELEM" || \
+				fail "cannot create ipset: $SET_NAME"
+		fi
+	done
+}
+
+activate_staged_sets() {
+	local spec
+
+	ensure_live_sets
+	SWAPPED_SETS=''
+	for spec in $SET_SPECS; do
+		parse_spec "$spec"
+		ipset swap "${SET_NAME}${STAGE_SUFFIX}" "$SET_NAME" || \
+			fail "failed to swap live ipset: $SET_NAME"
+		SWAPPED_SETS="$SWAPPED_SETS $SET_NAME"
+	done
+	SWAPPED_SETS=''
+
+	for spec in $SET_SPECS; do
+		parse_spec "$spec"
+		ipset destroy "${SET_NAME}${STAGE_SUFFIX}" || \
+			fail "failed to destroy previous ipset contents: $SET_NAME"
+	done
+	log 'applied 16 IPv4 and IPv6 ipsets'
+}
+
+command_fetch() {
+	fetch_candidate
+	stage_sets "$TMP_DOWNLOAD_DIR"
+	destroy_staged_sets
+
+	if bundle_is_unchanged "$TMP_DOWNLOAD_DIR"; then
+		log 'no persistent update is required'
+		return 0
+	fi
+	persist_bundle "$TMP_DOWNLOAD_DIR"
+}
+
+command_apply() {
+	[ -d "$STATE_DIR" ] || fail "state directory not found: $STATE_DIR"
+	stage_sets "$STATE_DIR"
+	activate_staged_sets
+}
+
+command_update() {
+	fetch_candidate
+	stage_sets "$TMP_DOWNLOAD_DIR"
+	if bundle_is_unchanged "$TMP_DOWNLOAD_DIR"; then
+		destroy_staged_sets
+		log 'source bundle is unchanged; live ipsets were not reloaded'
+		return 0
+	fi
+
+	# Apply the complete staged bundle first so an unappliable candidate is
+	# never installed as the next boot-time data set.
+	activate_staged_sets
+	persist_bundle "$TMP_DOWNLOAD_DIR"
+}
+
+main() {
+	umask 077
+	export LC_ALL=C
+	require_commands
+
+	case "${1:-}" in
+		fetch|apply|update)
+			acquire_lock
+			"command_$1"
+			;;
+		help|-h|--help)
+			usage
+			;;
+		*)
+			usage >&2
+			exit 2
+			;;
+	esac
+}
+
+main "$@"

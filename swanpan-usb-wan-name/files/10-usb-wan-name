@@ -1,0 +1,34 @@
+#!/bin/sh
+
+TARGET_DEVICE='cellular0'
+
+[ "${ACTION:-}" = 'add' ] || exit 0
+[ -n "${DEVICENAME:-}" ] || exit 0
+[ -e "/sys/class/net/${DEVICENAME}/device" ] || exit 0
+
+DEVICE_PATH="$(readlink -f "/sys/class/net/${DEVICENAME}/device")"
+DRIVER_PATH="$(readlink -f "/sys/class/net/${DEVICENAME}/device/driver")"
+DRIVER_NAME="$(basename "${DRIVER_PATH}")"
+
+case "${DEVICE_PATH}" in
+	*/usb*) ;;
+	*) exit 0 ;;
+esac
+
+case "${DRIVER_NAME}" in
+	cdc_ether|rndis_host) ;;
+	*) exit 0 ;;
+esac
+
+[ "${DEVICENAME}" = "${TARGET_DEVICE}" ] && exit 0
+
+if [ -e "/sys/class/net/${TARGET_DEVICE}" ]; then
+	logger -t usb-wan "${TARGET_DEVICE} already exists; ignoring ${DEVICENAME}"
+	exit 0
+fi
+
+ip link set dev "${DEVICENAME}" down || exit 1
+ip link set dev "${DEVICENAME}" name "${TARGET_DEVICE}" || exit 1
+
+logger -t usb-wan \
+	"renamed ${DEVICENAME} to ${TARGET_DEVICE}, driver=${DRIVER_NAME}"

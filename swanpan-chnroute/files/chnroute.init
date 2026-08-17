@@ -1,0 +1,15 @@
+#!/bin/sh /etc/rc.common
+# shellcheck disable=SC2034 # OpenWrt rc.common reads START and STOP.
+
+START=18
+STOP=89
+
+start() {
+	[ -x /usr/sbin/chnroute ] || return 1
+	[ -s /etc/chnroute/manifest.json ] || return 1
+	/usr/sbin/chnroute apply
+}
+
+reload() {
+	start
+}
