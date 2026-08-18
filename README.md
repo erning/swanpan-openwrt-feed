@@ -48,6 +48,44 @@ src-link swanpan /absolute/path/swanpan-openwrt-feed
 
 ## 构建
 
+### 使用 SDK 容器
+
+`scripts/build-sdk.sh` 使用官方 OpenWrt SDK 镜像构建指定软件包。启动 Docker 后，在仓库
+根目录运行：
+
+```sh
+OPENWRT_VERSION="25.12.2" \
+SDK_IMAGE="openwrt/sdk:mediatek-filogic-25.12.2" \
+PACKAGES="swanpan-chinadns-ng swanpan-mwan3-patch luci-app-mwan3-patch" \
+OUTPUT_DIR="dist/25.12.2/mediatek-filogic" \
+./scripts/build-sdk.sh
+```
+
+脚本会将仓库以只读方式挂载为本地 Feed，检查 SDK 内的 OpenWrt 版本，依次构建指定包及
+其 Swanpan 依赖包，并将 APK 和 `build.env` 写入
+`dist/25.12.2/mediatek-filogic/`。示例中的简写 `luci-app-mwan3-patch` 会解析为实际包名
+`swanpan-luci-app-mwan3-patch`。构建成功后，该产物目录中原有的 APK 会被本次结果替换。
+
+命令行中，每个软件包使用一个可重复的 `--package` 参数：
+
+```sh
+./scripts/build-sdk.sh \
+  --openwrt-version 25.12.2 \
+  --sdk-image openwrt/sdk:mediatek-filogic-25.12.2 \
+  --package swanpan-chinadns-ng \
+  --package swanpan-mwan3-patch \
+  --package luci-app-mwan3-patch \
+  --output dist/25.12.2/mediatek-filogic
+```
+
+一旦指定 `--package`，命令行中的软件包列表会覆盖 `PACKAGES` 环境变量。版本、SDK 镜像、
+软件包和产物目录均须显式提供。`JOBS`、`SDK_PLATFORM` 和 `PULL_POLICY` 是可选设置；未
+提供时，脚本不会传递对应参数。当前官方 SDK 镜像仅提供 `linux/amd64` 版本，因此
+Apple Silicon 主机应显式设置 `SDK_PLATFORM=linux/amd64` 或
+`--platform linux/amd64`。运行 `./scripts/build-sdk.sh --help` 查看完整选项。
+
+### 手动构建
+
 使用与目标设备版本、target 和 subtarget 一致的 OpenWrt SDK。根据需要分别构建软件包：
 
 ```sh
