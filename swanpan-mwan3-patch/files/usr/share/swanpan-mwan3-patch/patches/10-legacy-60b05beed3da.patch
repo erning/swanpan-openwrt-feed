@@ -1,0 +1,138 @@
+--- lib/mwan3/mwan3.sh
++++ lib/mwan3/mwan3.sh
+@@ -862,7 +862,7 @@
+ 
+ mwan3_set_user_iptables_rule()
+ {
+-	local ipset family proto policy src_ip src_port sticky dest_ip
++	local ipset ipset_src family proto policy src_ip src_port sticky dest_ip
+ 	local dest_port use_policy timeout rule policy IPT
+ 	local global_logging rule_logging loglevel
+ 
+@@ -871,6 +871,7 @@
+ 	config_get sticky $1 sticky 0
+ 	config_get timeout $1 timeout 600
+ 	config_get ipset $1 ipset
++	config_get ipset_src $1 ipset_src
+ 	config_get proto $1 proto all
+ 	config_get src_ip $1 src_ip 0.0.0.0/0
+ 	config_get src_port $1 src_port 0:65535
+@@ -889,6 +890,10 @@
+ 
+ 	if [ -n "$ipset" ]; then
+ 		ipset="-m set --match-set $ipset dst"
++	fi
++
++	if [ -n "$ipset_src" ]; then
++		ipset_src="-m set --match-set $ipset_src src"
+ 	fi
+ 
+ 	if [ -n "$use_policy" ]; then
+@@ -961,7 +966,7 @@
+ 						$IPT -A mwan3_rules \
+ 							-p $proto \
+ 							-s $src_ip \
+-							-d $dest_ip $ipset \
++							-d $dest_ip $ipset $ipset_src \
+ 							-m multiport --sports $src_port \
+ 							-m multiport --dports $dest_port \
+ 							-m mark --mark 0/$MMX_MASK \
+@@ -971,7 +976,7 @@
+ 					$IPT -A mwan3_rules \
+ 						-p $proto \
+ 						-s $src_ip \
+-						-d $dest_ip $ipset \
++						-d $dest_ip $ipset $ipset_src \
+ 						-m multiport --sports $src_port \
+ 						-m multiport --dports $dest_port \
+ 						-m mark --mark 0/$MMX_MASK \
+@@ -983,7 +988,7 @@
+ 						$IPT -A mwan3_rules \
+ 							-p $proto \
+ 							-s $src_ip \
+-							-d $dest_ip $ipset \
++							-d $dest_ip $ipset $ipset_src \
+ 							-m mark --mark 0/$MMX_MASK \
+ 							-m comment --comment "$1" \
+ 							-j LOG --log-level "$loglevel" --log-prefix "MWAN3($1)" &> /dev/null
+@@ -991,7 +996,7 @@
+ 					$IPT -A mwan3_rules \
+ 						-p $proto \
+ 						-s $src_ip \
+-						-d $dest_ip $ipset \
++						-d $dest_ip $ipset $ipset_src \
+ 						-m mark --mark 0/$MMX_MASK \
+ 						-m comment --comment "$1" \
+ 						-j $policy &> /dev/null
+@@ -1007,7 +1012,7 @@
+ 					$IPT4 -A mwan3_rules \
+ 						-p $proto \
+ 						-s $src_ip \
+-						-d $dest_ip $ipset \
++						-d $dest_ip $ipset $ipset_src \
+ 						-m multiport --sports $src_port \
+ 						-m multiport --dports $dest_port \
+ 						-m mark --mark 0/$MMX_MASK \
+@@ -1017,7 +1022,7 @@
+ 				$IPT4 -A mwan3_rules \
+ 					-p $proto \
+ 					-s $src_ip \
+-					-d $dest_ip $ipset \
++					-d $dest_ip $ipset $ipset_src \
+ 					-m multiport --sports $src_port \
+ 					-m multiport --dports $dest_port \
+ 					-m mark --mark 0/$MMX_MASK \
+@@ -1029,7 +1034,7 @@
+ 					$IPT4 -A mwan3_rules \
+ 						-p $proto \
+ 						-s $src_ip \
+-						-d $dest_ip $ipset \
++						-d $dest_ip $ipset $ipset_src \
+ 						-m mark --mark 0/$MMX_MASK \
+ 						-m comment --comment "$1" \
+ 						-j LOG --log-level "$loglevel" --log-prefix "MWAN3($1)" &> /dev/null
+@@ -1037,7 +1042,7 @@
+ 				$IPT4 -A mwan3_rules \
+ 					-p $proto \
+ 					-s $src_ip \
+-					-d $dest_ip $ipset \
++					-d $dest_ip $ipset $ipset_src \
+ 					-m mark --mark 0/$MMX_MASK \
+ 					-m comment --comment "$1" \
+ 					-j $policy &> /dev/null
+@@ -1052,7 +1057,7 @@
+ 					$IPT6 -A mwan3_rules \
+ 						-p $proto \
+ 						-s $src_ip \
+-						-d $dest_ip $ipset \
++						-d $dest_ip $ipset $ipset_src \
+ 						-m multiport --sports $src_port \
+ 						-m multiport --dports $dest_port \
+ 						-m mark --mark 0/$MMX_MASK \
+@@ -1062,7 +1067,7 @@
+ 				$IPT6 -A mwan3_rules \
+ 					-p $proto \
+ 					-s $src_ip \
+-					-d $dest_ip $ipset \
++					-d $dest_ip $ipset $ipset_src \
+ 					-m multiport --sports $src_port \
+ 					-m multiport --dports $dest_port \
+ 					-m mark --mark 0/$MMX_MASK \
+@@ -1074,7 +1079,7 @@
+ 					$IPT6 -A mwan3_rules \
+ 						-p $proto \
+ 						-s $src_ip \
+-						-d $dest_ip $ipset \
++						-d $dest_ip $ipset $ipset_src \
+ 						-m mark --mark 0/$MMX_MASK \
+ 						-m comment --comment "$1" \
+ 						-j LOG --log-level  "$loglevel" --log-prefix "MWAN3($1)" &> /dev/null
+@@ -1082,7 +1087,7 @@
+ 				$IPT6 -A mwan3_rules \
+ 					-p $proto \
+ 					-s $src_ip \
+-					-d $dest_ip $ipset \
++					-d $dest_ip $ipset $ipset_src \
+ 					-m mark --mark 0/$MMX_MASK \
+ 					-m comment --comment "$1" \
+ 					-j $policy &> /dev/null

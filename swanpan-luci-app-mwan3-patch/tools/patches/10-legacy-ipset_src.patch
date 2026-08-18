@@ -1,0 +1,18 @@
+--- www/luci-static/resources/view/mwan3/network/rule.js
++++ www/luci-static/resources/view/mwan3/network/rule.js
+@@ -105,6 +105,16 @@
+ 		o.depends('sticky', '1');
+ 
++		o = s.option(form.Value, 'ipset_src', _('IPset source'),
++			_('Name of IPset rule.'));
++		o.value('', _('-- Please choose --'));
++		var ipset_srcs = data[0].split(/\n/);
++		for (var i = 0; i < ipset_srcs.length; i++) {
++			if (ipset_srcs[i].length > 0)
++				o.value(ipset_srcs[i]);
++		}
++		o.modalonly = true;
++
+ 		o = s.option(form.Value, 'ipset', _('IPset'),
+ 			_('Name of IPset rule. Requires IPset rule in /etc/dnsmasq.conf (eg \"ipset=/youtube.com/youtube\")'));
+ 		o.value('', _('-- Please choose --'));
