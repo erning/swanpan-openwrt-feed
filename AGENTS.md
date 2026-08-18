@@ -10,21 +10,17 @@ This repository is an OpenWrt 25.12 package feed. Each top-level `swanpan-*` dir
 - `swanpan-mwan3-patch/` adds source-ipset matching to mwan3.
 - `swanpan-luci-app-mwan3-patch/` adds its field to versioned LuCI views.
 
-Metadata and install rules live in each package's `Makefile`; target files live under `files/`. `scripts/build-sdk.sh` runs container builds, and ignored `dist/` holds their artifacts. General instructions belong in `README.md`; there is no test directory.
+Metadata and install rules live in each package's `Makefile`; target files live under `files/`. `justfile` defines device builds, `scripts/build-sdk.sh` runs them, and ignored `dist/` holds artifacts. There is no test directory.
 
 ## Build, Test, and Development Commands
 
-For a containerized build, set the release, matching SDK image, and packages:
+Build the configured GL-MT3600BE target with:
 
 ```sh
-OPENWRT_VERSION=25.12.2 \
-SDK_IMAGE=openwrt/sdk:mediatek-filogic-25.12.2 \
-PACKAGES='swanpan-chinadns-ng swanpan-mwan3-patch' \
-OUTPUT_DIR=dist/25.12.2/mediatek-filogic \
-./scripts/build-sdk.sh
+just gl-mt3600be
 ```
 
-For a manual SDK build, add this repository as a local feed and run:
+For a custom or manual SDK build, add this repository as a local feed and run:
 
 ```sh
 ./scripts/feeds update swanpan

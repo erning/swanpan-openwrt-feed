@@ -48,6 +48,18 @@ src-link swanpan /absolute/path/swanpan-openwrt-feed
 
 ## 构建
 
+### 设备预设
+
+根目录的 `justfile` 提供按设备维护的构建配置。GL-MT3600BE 使用 OpenWrt 25.12.5、
+`mediatek/filogic` SDK 和仓库中的全部 5 个软件包：
+
+```sh
+just gl-mt3600be
+```
+
+直接运行 `just` 或 `just --list` 可以查看所有设备配方。GL-MT3600BE 的 APK 和构建信息
+写入 `dist/gl-mt3600be/25.12.5/`。
+
 ### 使用 SDK 容器
 
 `scripts/build-sdk.sh` 使用官方 OpenWrt SDK 镜像构建指定软件包。启动 Docker 后，在仓库
