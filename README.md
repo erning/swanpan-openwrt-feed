@@ -50,18 +50,29 @@ src-link swanpan /absolute/path/swanpan-openwrt-feed
 
 ### 设备预设
 
-根目录的 `justfile` 提供按设备维护的构建配置。GL-MT3600BE、GL-MT3000 和 GL-MT2500
-均默认使用 OpenWrt 25.12.5、`mediatek/filogic` SDK 和仓库中的全部 5 个软件包：
+根目录的 `justfile` 提供按设备维护的构建配置。所有配方默认使用 OpenWrt 25.12.5，并
+构建仓库中的全部 5 个软件包：
+
+| 配方 | 设备 | Target | 软件包架构 |
+| --- | --- | --- | --- |
+| `MT3600BE` | GL-MT3600BE | `mediatek/filogic` | `aarch64_cortex-a53` |
+| `MT3000` | GL-MT3000 | `mediatek/filogic` | `aarch64_cortex-a53` |
+| `MT2500` | GL-MT2500 | `mediatek/filogic` | `aarch64_cortex-a53` |
+| `XE300` | GL-XE300 | `ath79/nand` | `mips_24kc` |
+| `ERX` | Ubiquiti EdgeRouter X | `ramips/mt7621` | `mipsel_24kc` |
+| `ER4` | Ubiquiti EdgeRouter 4 | `octeon/generic` | `mips64_octeonplus` |
+| `ERLITE` | Ubiquiti EdgeRouter Lite | `octeon/generic` | `mips64_octeonplus` |
+| `USG` | Ubiquiti UniFi Security Gateway | `octeon/generic` | `mips64_octeonplus` |
 
 ```sh
-just gl-mt3600be
-just gl-mt3000
-just gl-mt2500
-just gl-mt3000 25.12.2
+just MT3600BE
+just XE300
+just ERX
+just ER4 25.12.2
 ```
 
 最后一条命令会改用 OpenWrt 25.12.2。版本号同时用于选择 SDK 镜像和产物目录，例如
-`dist/gl-mt3000/25.12.2/`。直接运行 `just` 或 `just --list` 可以查看所有设备配方。
+`dist/ER4/25.12.2/`。直接运行 `just` 或 `just --list` 可以查看所有设备配方。
 
 ### 使用 SDK 容器
 
