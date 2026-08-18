@@ -50,8 +50,9 @@ src-link swanpan /absolute/path/swanpan-openwrt-feed
 
 ### 设备预设
 
-根目录的 `justfile` 提供按设备维护的构建配置。所有配方默认使用 OpenWrt 25.12.5，并
-构建仓库中的全部 5 个软件包：
+根目录的 `justfile` 提供按设备维护的构建配置。所有配方默认使用 OpenWrt 25.12.5。
+GL.iNet 配方构建全部 5 个软件包；Ubiquiti 配方不构建 `swanpan-usb-wan-name`，仅构建
+其余 4 个软件包：
 
 | 配方 | 设备 | Target | 软件包架构 |
 | --- | --- | --- | --- |
