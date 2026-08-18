@@ -14,10 +14,11 @@ Metadata and install rules live in each package's `Makefile`; target files live 
 
 ## Build, Test, and Development Commands
 
-Build the configured GL-MT3600BE target with:
+Run `just` to list device targets. Build one with its default OpenWrt version or pass an explicit version:
 
 ```sh
-just gl-mt3600be
+just gl-mt3000
+just gl-mt3000 25.12.2
 ```
 
 For a custom or manual SDK build, add this repository as a local feed and run:
