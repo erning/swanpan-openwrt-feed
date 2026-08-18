@@ -37,25 +37,20 @@ MT2500 version="25.12.5":
     	--openwrt-version "{{ version }}" \
     	--sdk-image "openwrt/sdk:mediatek-filogic-{{ version }}" \
     	--platform linux/amd64 \
-    	--package swanpan-usb-wan-name \
     	--package swanpan-chnroute \
     	--package swanpan-chinadns-ng \
     	--package swanpan-mwan3-patch \
     	--package swanpan-luci-app-mwan3-patch \
     	--output "{{ output_root }}/MT2500/{{ version }}"
 
-# GL.iNet GL-XE300 Puli (ath79/nand, mips_24kc).
-XE300 version="25.12.5":
+# GL.iNet GL-XE300 Puli (vendor firmware 4.3.27, Native OpenWrt 22.03.4).
+XE300 version="22.03.4":
     ./scripts/build-sdk.sh \
-    	--openwrt-version "{{ version }}" \
-    	--sdk-image "openwrt/sdk:ath79-nand-{{ version }}" \
-    	--platform linux/amd64 \
-    	--package swanpan-usb-wan-name \
-    	--package swanpan-chnroute \
-    	--package swanpan-chinadns-ng \
-    	--package swanpan-mwan3-patch \
-    	--package swanpan-luci-app-mwan3-patch \
-    	--output "{{ output_root }}/XE300/{{ version }}"
+        --openwrt-version "{{ version }}" \
+        --sdk-image "openwrt/sdk:ath79-nand-{{ version }}" \
+        --platform linux/amd64 \
+        --package swanpan-chnroute \
+        --output "{{ output_root }}/XE300/vendor-4.3.27"
 
 # GL.iNet GL-E5800 Mudi 7 (vendor firmware 4.8.5, QuecOpen/OpenWrt 23.05.4).
 E5800 version="23.05.4":
@@ -73,7 +68,6 @@ BE3600 version="23.05.6":
         --sdk-image "openwrt/sdk:mediatek-filogic-{{ version }}" \
         --platform linux/amd64 \
         --package swanpan-chnroute \
-        --package swanpan-chinadns-ng \
         --output "{{ output_root }}/BE3600/vendor-4.9.0"
 
 # Ubiquiti EdgeRouter X (ramips/mt7621, mipsel_24kc).
@@ -100,6 +94,18 @@ ER4 version="25.12.5":
     	--package swanpan-luci-app-mwan3-patch \
     	--output "{{ output_root }}/ER4/{{ version }}"
 
+# Ubiquiti EdgeRouter Pro ERPro-8 (octeon/generic, mips64_octeonplus).
+ERPRO version="25.12.5":
+    ./scripts/build-sdk.sh \
+        --openwrt-version "{{ version }}" \
+        --sdk-image "openwrt/sdk:octeon-generic-{{ version }}" \
+        --platform linux/amd64 \
+        --package swanpan-chnroute \
+        --package swanpan-chinadns-ng \
+        --package swanpan-mwan3-patch \
+        --package swanpan-luci-app-mwan3-patch \
+        --output "{{ output_root }}/ERPRO/{{ version }}"
+
 # Ubiquiti EdgeRouter Lite (octeon/generic, mips64_octeonplus).
 ERLITE version="25.12.5":
     ./scripts/build-sdk.sh \
@@ -123,3 +129,15 @@ USG version="25.12.5":
     	--package swanpan-mwan3-patch \
     	--package swanpan-luci-app-mwan3-patch \
     	--output "{{ output_root }}/USG/{{ version }}"
+
+# Generic x86/64 (x86/64, x86_64).
+X86_64 version="25.12.5":
+    ./scripts/build-sdk.sh \
+        --openwrt-version "{{ version }}" \
+        --sdk-image "openwrt/sdk:x86-64-{{ version }}" \
+        --platform linux/amd64 \
+        --package swanpan-chnroute \
+        --package swanpan-chinadns-ng \
+        --package swanpan-mwan3-patch \
+        --package swanpan-luci-app-mwan3-patch \
+        --output "{{ output_root }}/X86_64/{{ version }}"

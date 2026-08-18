@@ -1,8 +1,8 @@
 # Swanpan OpenWrt Feed
 
 本仓库提供 Swanpan 维护的 OpenWrt 软件包，主要面向使用 APK 包管理器的 OpenWrt
-25.12，并按目标架构提供预编译的 ChinaDNS-NG。此外，也支持为 GL-E5800 和 GL-BE3600
-的厂商固件构建特定的软件包组合。
+25.12，并按目标架构提供预编译的 ChinaDNS-NG。此外，也支持为 GL-XE300、GL-E5800 和
+GL-BE3600 的厂商固件构建特定的软件包组合。
 
 ## 软件包
 
@@ -52,10 +52,10 @@ src-link swanpan /absolute/path/swanpan-openwrt-feed
 ### 设备预设
 
 根目录的 `justfile` 提供按设备维护的构建配置。常规设备配方默认使用 OpenWrt 25.12.5。
-常规 GL.iNet 配方构建全部 5 个软件包；Ubiquiti 配方不构建
-`swanpan-usb-wan-name`，仅构建其余 4 个软件包。E5800 配方默认使用 OpenWrt 23.05.4，
-仅构建 `swanpan-chnroute`；BE3600 配方默认使用 OpenWrt 23.05.6，构建
-`swanpan-chnroute` 和 `swanpan-chinadns-ng`：
+MT3600BE 和 MT3000 配方构建全部 5 个软件包；MT2500、Ubiquiti 和 Generic x86/64
+配方不构建 `swanpan-usb-wan-name`，仅构建其余 4 个软件包。XE300 和 E5800 配方分别
+默认使用 OpenWrt 22.03.4 和 23.05.4；BE3600 配方默认使用 OpenWrt 23.05.6。这三个
+厂商固件配方都只构建 `swanpan-chnroute`：
 
 | 配方 | 设备 | Target | 软件包架构 |
 | --- | --- | --- | --- |
@@ -67,8 +67,10 @@ src-link swanpan /absolute/path/swanpan-openwrt-feed
 | `BE3600` | GL-BE3600 | `ipq53xx`（厂商 QSDK） | `aarch64_cortex-a53_neon-vfpv4` |
 | `ERX` | Ubiquiti EdgeRouter X | `ramips/mt7621` | `mipsel_24kc` |
 | `ER4` | Ubiquiti EdgeRouter 4 | `octeon/generic` | `mips64_octeonplus` |
+| `ERPRO` | Ubiquiti EdgeRouter Pro（ERPro-8） | `octeon/generic` | `mips64_octeonplus` |
 | `ERLITE` | Ubiquiti EdgeRouter Lite | `octeon/generic` | `mips64_octeonplus` |
 | `USG` | Ubiquiti UniFi Security Gateway | `octeon/generic` | `mips64_octeonplus` |
+| `X86_64` | Generic x86/64 | `x86/64` | `x86_64` |
 
 ```sh
 just MT3600BE
@@ -77,14 +79,22 @@ just E5800
 just E5800 23.05.6
 just BE3600
 just ERX
+just ERPRO
+just X86_64
 just ER4 25.12.2
 ```
 
 最后一条命令会改用 OpenWrt 25.12.2。常规设备配方的版本号同时用于选择 SDK 镜像和产物
-目录，例如 `dist/ER4/25.12.2/`。E5800 和 BE3600 的版本参数只选择兼容 SDK，产物目录
-分别使用带 `vendor-` 前缀的厂商固件版本 `dist/E5800/vendor-4.8.5/` 和
-`dist/BE3600/vendor-4.9.0/`。直接运行 `just` 或
+目录，例如 `dist/ER4/25.12.2/`。XE300、E5800 和 BE3600 的版本参数只选择兼容 SDK，
+产物目录分别使用带 `vendor-` 前缀的厂商固件版本 `dist/XE300/vendor-4.3.27/`、
+`dist/E5800/vendor-4.8.5/` 和 `dist/BE3600/vendor-4.9.0/`。直接运行 `just` 或
 `just --list` 可以查看所有设备配方。
+
+GL.iNet 的[XE300 stable 下载页](https://dl.gl-inet.com/router/xe300/stable)将最新发布固件
+列为 4.3.27，[固件版本表](https://www.gl-inet.com/en-gb/pages/firmware-versions)将其标注为
+Native OpenWrt 22.03.4。`XE300` 配方使用对应的官方 `ath79/nand` SDK，并且仅构建与
+目标架构及厂商蜂窝网络配置无关、声明为 `PKGARCH:=all` 的 `swanpan-chnroute`。产物写入
+`dist/XE300/vendor-4.3.27/`；版本参数只改变 SDK，不改变厂商固件基线或产物目录。
 
 GL.iNet 的[E5800 stable 下载页](https://dl.gl-inet.com/router/e5800/stable)将最新发布固件
 列为 4.8.5，[固件版本表](https://www.gl-inet.com/en-gb/pages/firmware-versions)将其标注为
@@ -101,10 +111,8 @@ GL.iNet 的[固件版本表](https://www.gl-inet.com/en-us/pages/firmware-versio
 最新发布固件列为 4.9.0，并标注 QSDK、OpenWrt 23.05；设备运行 OpenWrt
 23.05-SNAPSHOT，上游没有对应的 `ipq53xx` SDK。`BE3600` 配方默认借用官方 OpenWrt
 23.05.6 的 `mediatek/filogic` SDK，该版本是兼容打包环境，并非厂商固件标注的精确补丁
-版本。配方只打包与内核和 QSDK 无关的 chnroute，以及包含静态 AArch64 二进制的
-ChinaDNS-NG。该 SDK 生成的架构名称是 `aarch64_cortex-a53`，与厂商使用的
-`aarch64_cortex-a53_neon-vfpv4` 名称不同；安装前需要按下文配置 `opkg`。该配方不能
-用于编译内核模块或动态链接的目标相关程序。产物写入 `dist/BE3600/vendor-4.9.0/`。
+版本。配方只打包与内核和 QSDK 无关、声明为 `PKGARCH:=all` 的 `swanpan-chnroute`，不能
+用于编译内核模块或目标相关软件包。产物写入 `dist/BE3600/vendor-4.9.0/`。
 
 ### 使用 SDK 容器
 
@@ -170,7 +178,8 @@ make package/index
 
 ## 安装
 
-E5800 使用 `opkg`。先确认设备版本和软件包架构，再安装依赖及构建出的 IPK：
+XE300、E5800 和 BE3600 使用 `opkg`。先确认设备版本和软件包架构，再安装依赖及构建出的
+IPK：
 
 ```sh
 cat /etc/openwrt_release
@@ -178,20 +187,6 @@ opkg print-architecture
 opkg update
 opkg install curl flock ipset
 opkg install /tmp/swanpan-chnroute_*.ipk
-```
-
-BE3600 的厂商 `opkg` 默认只接受 `aarch64_cortex-a53_neon-vfpv4`。先检查架构列表；如果
-缺少 `aarch64_cortex-a53`，将其以较低优先级加入 `/etc/opkg.conf`，再安装两个软件包：
-
-```sh
-opkg print-architecture
-grep -q '^arch aarch64_cortex-a53 ' /etc/opkg.conf || \
-  printf '%s\n' 'arch aarch64_cortex-a53 5' >> /etc/opkg.conf
-opkg update
-opkg install curl flock ipset
-opkg install \
-  /tmp/swanpan-chnroute_*.ipk \
-  /tmp/swanpan-chinadns-ng_*.ipk
 ```
 
 不要使用 `--force-depends` 绕过依赖检查。以下安装命令适用于 OpenWrt 25.12。
