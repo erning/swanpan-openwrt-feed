@@ -6,11 +6,11 @@ This repository is an OpenWrt 25.12 package feed. Each top-level `swanpan-*` dir
 
 - `swanpan-usb-wan-name/` installs a network hotplug script.
 - `swanpan-chnroute/` installs the route-data manager, init script, and bundled CIDR data.
-- `swanpan-chinadns-ng/` installs a verified target-specific binary, configuration, and procd service.
+- `swanpan-chinadns-ng/` installs a verified binary, configuration, and procd service.
 - `swanpan-mwan3-patch/` adds source-ipset matching to mwan3.
 - `swanpan-luci-app-mwan3-patch/` adds its field to versioned LuCI views.
 
-Metadata and install rules live in each package's `Makefile`; target files live under `files/`. `justfile` defines device builds, `scripts/build-sdk.sh` runs them, and ignored `dist/` holds artifacts. There is no test directory.
+Package rules live in each `Makefile`; target files live under `files/`. `justfile` defines device builds, `scripts/build-sdk.sh` runs them, ignored `dist/` holds artifacts and caches, and `tests/` contains integration tests.
 
 ## Build, Test, and Development Commands
 
@@ -19,6 +19,7 @@ Run `just` to list device targets. Build one with its default OpenWrt version or
 ```sh
 just MT3000
 just MT3000 25.12.2
+just ALL
 ```
 
 For a custom or manual SDK build, add this repository as a local feed and run:
@@ -30,7 +31,7 @@ make defconfig
 make package/feeds/swanpan/swanpan-chnroute/compile V=s
 ```
 
-Replace the final package name as needed. Container artifacts go to `OUTPUT_DIR`; manual artifacts go to `bin/packages/<architecture>/swanpan/`. Run `make package/index` only for a feed index. Syntax-check changed shell files with `sh -n` and ShellCheck.
+Replace the package name as needed. Container artifacts go to `OUTPUT_DIR`; manual artifacts go to `bin/packages/<architecture>/swanpan/`. Run `make package/index` only for a feed index. Validate cache changes with `tests/test-build-sdk-cache.sh`; check other shell files with `sh -n` and ShellCheck.
 
 ## Coding Style & Naming Conventions
 
@@ -38,7 +39,7 @@ Follow OpenWrt package conventions: uppercase package variables, tab-indented re
 
 ## Testing Guidelines
 
-No tests or coverage threshold exist. At minimum, syntax-check every changed shell file and compile every affected package in a matching SDK. For service or hotplug changes, also install the generated APK on a test router and verify init/procd behavior, logs, and upgrade preservation of declared configuration files.
+There is no coverage threshold. Run `tests/test-build-sdk-cache.sh` for cache changes. Syntax-check every changed shell file and compile affected packages in a matching SDK. For service or hotplug changes, install the APK on a test router and verify procd behavior, logs, and configuration preservation.
 
 ## Commit & Pull Request Guidelines
 

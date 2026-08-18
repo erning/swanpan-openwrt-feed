@@ -1,6 +1,7 @@
 set shell := ["sh", "-eu", "-c"]
 
 output_root := "dist"
+cache_root := "dist/.cache"
 
 default:
     @just --list
@@ -11,6 +12,7 @@ MT3600BE version="25.12.5":
     	--openwrt-version "{{ version }}" \
     	--sdk-image "openwrt/sdk:mediatek-filogic-{{ version }}" \
     	--platform linux/amd64 \
+        --cache-dir "{{ cache_root }}" \
     	--package swanpan-usb-wan-name \
     	--package swanpan-chnroute \
     	--package swanpan-chinadns-ng \
@@ -24,6 +26,7 @@ MT3000 version="25.12.5":
     	--openwrt-version "{{ version }}" \
     	--sdk-image "openwrt/sdk:mediatek-filogic-{{ version }}" \
     	--platform linux/amd64 \
+        --cache-dir "{{ cache_root }}" \
     	--package swanpan-usb-wan-name \
     	--package swanpan-chnroute \
     	--package swanpan-chinadns-ng \
@@ -37,6 +40,7 @@ MT2500 version="25.12.5":
     	--openwrt-version "{{ version }}" \
     	--sdk-image "openwrt/sdk:mediatek-filogic-{{ version }}" \
     	--platform linux/amd64 \
+        --cache-dir "{{ cache_root }}" \
     	--package swanpan-chnroute \
     	--package swanpan-chinadns-ng \
     	--package swanpan-mwan3-patch \
@@ -49,6 +53,7 @@ XE300 version="22.03.4":
         --openwrt-version "{{ version }}" \
         --sdk-image "openwrt/sdk:ath79-nand-{{ version }}" \
         --platform linux/amd64 \
+        --cache-dir "{{ cache_root }}" \
         --package swanpan-chnroute \
         --output "{{ output_root }}/XE300/vendor-4.3.27"
 
@@ -58,6 +63,7 @@ E5800 version="23.05.4":
         --openwrt-version "{{ version }}" \
         --sdk-image "openwrt/sdk:mediatek-filogic-{{ version }}" \
         --platform linux/amd64 \
+        --cache-dir "{{ cache_root }}" \
         --package swanpan-chnroute \
         --output "{{ output_root }}/E5800/vendor-4.8.5"
 
@@ -67,6 +73,7 @@ BE3600 version="23.05.6":
         --openwrt-version "{{ version }}" \
         --sdk-image "openwrt/sdk:mediatek-filogic-{{ version }}" \
         --platform linux/amd64 \
+        --cache-dir "{{ cache_root }}" \
         --package swanpan-chnroute \
         --output "{{ output_root }}/BE3600/vendor-4.9.0"
 
@@ -76,6 +83,7 @@ ERX version="25.12.5":
     	--openwrt-version "{{ version }}" \
     	--sdk-image "openwrt/sdk:ramips-mt7621-{{ version }}" \
     	--platform linux/amd64 \
+        --cache-dir "{{ cache_root }}" \
     	--package swanpan-chnroute \
     	--package swanpan-chinadns-ng \
     	--package swanpan-mwan3-patch \
@@ -88,6 +96,7 @@ ER4 version="25.12.5":
     	--openwrt-version "{{ version }}" \
     	--sdk-image "openwrt/sdk:octeon-generic-{{ version }}" \
     	--platform linux/amd64 \
+        --cache-dir "{{ cache_root }}" \
     	--package swanpan-chnroute \
     	--package swanpan-chinadns-ng \
     	--package swanpan-mwan3-patch \
@@ -100,6 +109,7 @@ ERPRO version="25.12.5":
         --openwrt-version "{{ version }}" \
         --sdk-image "openwrt/sdk:octeon-generic-{{ version }}" \
         --platform linux/amd64 \
+        --cache-dir "{{ cache_root }}" \
         --package swanpan-chnroute \
         --package swanpan-chinadns-ng \
         --package swanpan-mwan3-patch \
@@ -112,6 +122,7 @@ ERLITE version="25.12.5":
     	--openwrt-version "{{ version }}" \
     	--sdk-image "openwrt/sdk:octeon-generic-{{ version }}" \
     	--platform linux/amd64 \
+        --cache-dir "{{ cache_root }}" \
     	--package swanpan-chnroute \
     	--package swanpan-chinadns-ng \
     	--package swanpan-mwan3-patch \
@@ -124,6 +135,7 @@ USG version="25.12.5":
     	--openwrt-version "{{ version }}" \
     	--sdk-image "openwrt/sdk:octeon-generic-{{ version }}" \
     	--platform linux/amd64 \
+        --cache-dir "{{ cache_root }}" \
     	--package swanpan-chnroute \
     	--package swanpan-chinadns-ng \
     	--package swanpan-mwan3-patch \
@@ -136,8 +148,24 @@ X86_64 version="25.12.5":
         --openwrt-version "{{ version }}" \
         --sdk-image "openwrt/sdk:x86-64-{{ version }}" \
         --platform linux/amd64 \
+        --cache-dir "{{ cache_root }}" \
         --package swanpan-chnroute \
         --package swanpan-chinadns-ng \
         --package swanpan-mwan3-patch \
         --package swanpan-luci-app-mwan3-patch \
         --output "{{ output_root }}/X86_64/{{ version }}"
+
+# Build every default device recipe sequentially so shared SDK caches are reused.
+ALL:
+    just MT3600BE
+    just MT3000
+    just MT2500
+    just XE300
+    just E5800
+    just BE3600
+    just ERX
+    just ER4
+    just ERPRO
+    just ERLITE
+    just USG
+    just X86_64

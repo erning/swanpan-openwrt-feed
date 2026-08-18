@@ -82,13 +82,20 @@ just ERX
 just ERPRO
 just X86_64
 just ER4 25.12.2
+just ALL
 ```
 
-最后一条命令会改用 OpenWrt 25.12.2。常规设备配方的版本号同时用于选择 SDK 镜像和产物
-目录，例如 `dist/ER4/25.12.2/`。XE300、E5800 和 BE3600 的版本参数只选择兼容 SDK，
-产物目录分别使用带 `vendor-` 前缀的厂商固件版本 `dist/XE300/vendor-4.3.27/`、
+其中 `just ER4 25.12.2` 会改用 OpenWrt 25.12.2。常规设备配方的版本号同时用于选择
+SDK 镜像和产物目录，例如 `dist/ER4/25.12.2/`。XE300、E5800 和 BE3600 的版本参数只
+选择兼容 SDK，产物目录分别使用带 `vendor-` 前缀的厂商固件版本
+`dist/XE300/vendor-4.3.27/`、
 `dist/E5800/vendor-4.8.5/` 和 `dist/BE3600/vendor-4.9.0/`。直接运行 `just` 或
 `just --list` 可以查看所有设备配方。
+
+`just ALL` 按顺序构建所有设备。设备配方显式使用 `dist/.cache/`：MT3600BE、MT3000
+和 MT2500 共享同一套 `mediatek/filogic` 软件包缓存，ER4、ERPRO、ERLITE 和 USG
+共享 `octeon/generic` 缓存。默认配置只需启动 7 个不同的 SDK 环境，而不是为 12 个
+设备分别重复构建。
 
 GL.iNet 的[XE300 stable 下载页](https://dl.gl-inet.com/router/xe300/stable)将最新发布固件
 列为 4.3.27，[固件版本表](https://www.gl-inet.com/en-gb/pages/firmware-versions)将其标注为
@@ -124,6 +131,7 @@ OPENWRT_VERSION="25.12.2" \
 SDK_IMAGE="openwrt/sdk:mediatek-filogic-25.12.2" \
 PACKAGES="swanpan-chinadns-ng swanpan-mwan3-patch luci-app-mwan3-patch" \
 OUTPUT_DIR="dist/25.12.2/mediatek-filogic" \
+CACHE_DIR="dist/.cache" \
 ./scripts/build-sdk.sh
 ```
 
@@ -139,6 +147,7 @@ OUTPUT_DIR="dist/25.12.2/mediatek-filogic" \
 ./scripts/build-sdk.sh \
   --openwrt-version 25.12.2 \
   --sdk-image openwrt/sdk:mediatek-filogic-25.12.2 \
+  --cache-dir dist/.cache \
   --package swanpan-chinadns-ng \
   --package swanpan-mwan3-patch \
   --package luci-app-mwan3-patch \
@@ -150,6 +159,18 @@ OUTPUT_DIR="dist/25.12.2/mediatek-filogic" \
 提供时，脚本不会传递对应参数。当前官方 SDK 镜像仅提供 `linux/amd64` 版本，因此
 Apple Silicon 主机应显式设置 `SDK_PLATFORM=linux/amd64` 或
 `--platform linux/amd64`。运行 `./scripts/build-sdk.sh --help` 查看完整选项。
+
+缓存仅在显式设置 `CACHE_DIR` 或 `--cache-dir` 时启用。下载文件按 SDK 镜像隔离；APK
+和 IPK 按 SDK 镜像 ID、目标平台、构建源码哈希和软件包名称保存，并在命中时校验
+SHA-256。修改任意软件包源码或构建脚本会自动使用新的缓存键。`build.env` 中的
+`CACHE_HIT` 表示本次是否跳过了容器构建。需要强制重建软件包但保留下载缓存时，追加
+`--rebuild`。
+
+缓存行为可以使用伪 Docker 集成测试验证，无需下载 SDK 镜像：
+
+```sh
+tests/test-build-sdk-cache.sh
+```
 
 ### 手动构建
 
