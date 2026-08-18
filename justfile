@@ -5,7 +5,7 @@ output_root := "dist"
 default:
     @just --list
 
-# GL.iNet GL-MT3600BE (mediatek/filogic, aarch64_cortex-a53).
+# GL.iNet GL-MT3600BE Beryl 7 (mediatek/filogic, aarch64_cortex-a53).
 MT3600BE version="25.12.5":
     ./scripts/build-sdk.sh \
     	--openwrt-version "{{ version }}" \
@@ -18,7 +18,7 @@ MT3600BE version="25.12.5":
     	--package swanpan-luci-app-mwan3-patch \
     	--output "{{ output_root }}/MT3600BE/{{ version }}"
 
-# GL.iNet GL-MT3000 (mediatek/filogic, aarch64_cortex-a53).
+# GL.iNet GL-MT3000 Beryl AX (mediatek/filogic, aarch64_cortex-a53).
 MT3000 version="25.12.5":
     ./scripts/build-sdk.sh \
     	--openwrt-version "{{ version }}" \
@@ -31,7 +31,7 @@ MT3000 version="25.12.5":
     	--package swanpan-luci-app-mwan3-patch \
     	--output "{{ output_root }}/MT3000/{{ version }}"
 
-# GL.iNet GL-MT2500 (mediatek/filogic, aarch64_cortex-a53).
+# GL.iNet GL-MT2500 Brume 2 (mediatek/filogic, aarch64_cortex-a53).
 MT2500 version="25.12.5":
     ./scripts/build-sdk.sh \
     	--openwrt-version "{{ version }}" \
@@ -44,7 +44,7 @@ MT2500 version="25.12.5":
     	--package swanpan-luci-app-mwan3-patch \
     	--output "{{ output_root }}/MT2500/{{ version }}"
 
-# GL.iNet GL-XE300 (ath79/nand, mips_24kc).
+# GL.iNet GL-XE300 Puli (ath79/nand, mips_24kc).
 XE300 version="25.12.5":
     ./scripts/build-sdk.sh \
     	--openwrt-version "{{ version }}" \
@@ -56,6 +56,25 @@ XE300 version="25.12.5":
     	--package swanpan-mwan3-patch \
     	--package swanpan-luci-app-mwan3-patch \
     	--output "{{ output_root }}/XE300/{{ version }}"
+
+# GL.iNet GL-E5800 Mudi 7 (vendor firmware 4.8.5, QuecOpen/OpenWrt 23.05.4).
+E5800 version="23.05.4":
+    ./scripts/build-sdk.sh \
+        --openwrt-version "{{ version }}" \
+        --sdk-image "openwrt/sdk:mediatek-filogic-{{ version }}" \
+        --platform linux/amd64 \
+        --package swanpan-chnroute \
+        --output "{{ output_root }}/E5800/vendor-4.8.5"
+
+# GL.iNet GL-BE3600 Slate 7 (vendor firmware 4.9.0, QSDK/OpenWrt 23.05).
+BE3600 version="23.05.6":
+    ./scripts/build-sdk.sh \
+        --openwrt-version "{{ version }}" \
+        --sdk-image "openwrt/sdk:mediatek-filogic-{{ version }}" \
+        --platform linux/amd64 \
+        --package swanpan-chnroute \
+        --package swanpan-chinadns-ng \
+        --output "{{ output_root }}/BE3600/vendor-4.9.0"
 
 # Ubiquiti EdgeRouter X (ramips/mt7621, mipsel_24kc).
 ERX version="25.12.5":

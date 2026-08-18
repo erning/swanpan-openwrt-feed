@@ -240,14 +240,16 @@ set -- "$@" \
 
 		for package in $REQUESTED_PACKAGES; do
 			artifacts=$(find bin/packages -type f \
-				-path "*/swanpan/$package-*.apk" -print)
+				\( -path "*/swanpan/$package-*.apk" -o \
+				-path "*/swanpan/${package}_*.ipk" \) -print)
 			[ -n "$artifacts" ] || {
-				echo "error: no APK produced for $package" >&2
+				echo "error: no package archive produced for $package" >&2
 				exit 1
 			}
 		done
 
-		artifacts=$(find bin/packages -type f -path "*/swanpan/*.apk" -print)
+		artifacts=$(find bin/packages -type f \
+			\( -path "*/swanpan/*.apk" -o -path "*/swanpan/*.ipk" \) -print)
 		for artifact in $artifacts; do
 			cp -f "$artifact" /output/
 		done
@@ -265,10 +267,12 @@ set -- "$@" \
 	'
 "$@"
 
-artifacts=$(find "$incoming_dir" -maxdepth 1 -type f -name '*.apk' -print)
-[ -n "$artifacts" ] || die "the SDK build produced no APK files"
+artifacts=$(find "$incoming_dir" -maxdepth 1 -type f \
+	\( -name '*.apk' -o -name '*.ipk' \) -print)
+[ -n "$artifacts" ] || die "the SDK build produced no package archives"
 
-find "$output_dir" -maxdepth 1 -type f -name 'swanpan-*.apk' \
+find "$output_dir" -maxdepth 1 -type f \
+	\( -name 'swanpan-*.apk' -o -name 'swanpan-*.ipk' \) \
 	-exec rm -f -- {} +
 for artifact in $artifacts; do
 	mv -f "$artifact" "$output_dir/"
