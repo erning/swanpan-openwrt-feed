@@ -50,15 +50,16 @@ src-link swanpan /absolute/path/swanpan-openwrt-feed
 
 ### 设备预设
 
-根目录的 `justfile` 提供按设备维护的构建配置。GL-MT3600BE 使用 OpenWrt 25.12.5、
+根目录的 `justfile` 提供按设备维护的构建配置。GL-MT3600BE 默认使用 OpenWrt 25.12.5、
 `mediatek/filogic` SDK 和仓库中的全部 5 个软件包：
 
 ```sh
 just gl-mt3600be
+just gl-mt3600be 25.12.2
 ```
 
-直接运行 `just` 或 `just --list` 可以查看所有设备配方。GL-MT3600BE 的 APK 和构建信息
-写入 `dist/gl-mt3600be/25.12.5/`。
+第二条命令会改用 OpenWrt 25.12.2。版本号同时用于选择 SDK 镜像和产物目录，例如
+`dist/gl-mt3600be/25.12.2/`。直接运行 `just` 或 `just --list` 可以查看所有设备配方。
 
 ### 使用 SDK 容器
 
