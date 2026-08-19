@@ -9,43 +9,43 @@ default:
 # GL.iNet GL-MT3600BE Beryl 7 (mediatek/filogic, aarch64_cortex-a53).
 MT3600BE version="25.12.5":
     ./scripts/build-sdk.sh \
-    	--openwrt-version "{{ version }}" \
-    	--sdk-image "openwrt/sdk:mediatek-filogic-{{ version }}" \
-    	--platform linux/amd64 \
+        --openwrt-version "{{ version }}" \
+        --sdk-image "openwrt/sdk:mediatek-filogic-{{ version }}" \
+        --platform linux/amd64 \
         --cache-dir "{{ cache_root }}" \
-    	--package swanpan-usb-wan-name \
-    	--package swanpan-chnroute \
-    	--package swanpan-chinadns-ng \
-    	--package swanpan-mwan3-patch \
-    	--package swanpan-luci-app-mwan3-patch \
-    	--output "{{ output_root }}/MT3600BE/{{ version }}"
+        --package swanpan-usb-wan-name \
+        --package swanpan-chnroute \
+        --package swanpan-chinadns-ng \
+        --package swanpan-mwan3-patch \
+        --package swanpan-luci-app-mwan3-patch \
+        --output "{{ output_root }}/MT3600BE/{{ version }}"
 
 # GL.iNet GL-MT3000 Beryl AX (mediatek/filogic, aarch64_cortex-a53).
 MT3000 version="25.12.5":
     ./scripts/build-sdk.sh \
-    	--openwrt-version "{{ version }}" \
-    	--sdk-image "openwrt/sdk:mediatek-filogic-{{ version }}" \
-    	--platform linux/amd64 \
+        --openwrt-version "{{ version }}" \
+        --sdk-image "openwrt/sdk:mediatek-filogic-{{ version }}" \
+        --platform linux/amd64 \
         --cache-dir "{{ cache_root }}" \
-    	--package swanpan-usb-wan-name \
-    	--package swanpan-chnroute \
-    	--package swanpan-chinadns-ng \
-    	--package swanpan-mwan3-patch \
-    	--package swanpan-luci-app-mwan3-patch \
-    	--output "{{ output_root }}/MT3000/{{ version }}"
+        --package swanpan-usb-wan-name \
+        --package swanpan-chnroute \
+        --package swanpan-chinadns-ng \
+        --package swanpan-mwan3-patch \
+        --package swanpan-luci-app-mwan3-patch \
+        --output "{{ output_root }}/MT3000/{{ version }}"
 
 # GL.iNet GL-MT2500 Brume 2 (mediatek/filogic, aarch64_cortex-a53).
 MT2500 version="25.12.5":
     ./scripts/build-sdk.sh \
-    	--openwrt-version "{{ version }}" \
-    	--sdk-image "openwrt/sdk:mediatek-filogic-{{ version }}" \
-    	--platform linux/amd64 \
+        --openwrt-version "{{ version }}" \
+        --sdk-image "openwrt/sdk:mediatek-filogic-{{ version }}" \
+        --platform linux/amd64 \
         --cache-dir "{{ cache_root }}" \
-    	--package swanpan-chnroute \
-    	--package swanpan-chinadns-ng \
-    	--package swanpan-mwan3-patch \
-    	--package swanpan-luci-app-mwan3-patch \
-    	--output "{{ output_root }}/MT2500/{{ version }}"
+        --package swanpan-chnroute \
+        --package swanpan-chinadns-ng \
+        --package swanpan-mwan3-patch \
+        --package swanpan-luci-app-mwan3-patch \
+        --output "{{ output_root }}/MT2500/{{ version }}"
 
 # GL.iNet GL-XE300 Puli (vendor firmware 4.3.27, Native OpenWrt 22.03.4).
 XE300 version="22.03.4":
@@ -80,28 +80,28 @@ BE3600 version="23.05.6":
 # Ubiquiti EdgeRouter X (ramips/mt7621, mipsel_24kc).
 ERX version="25.12.5":
     ./scripts/build-sdk.sh \
-    	--openwrt-version "{{ version }}" \
-    	--sdk-image "openwrt/sdk:ramips-mt7621-{{ version }}" \
-    	--platform linux/amd64 \
+        --openwrt-version "{{ version }}" \
+        --sdk-image "openwrt/sdk:ramips-mt7621-{{ version }}" \
+        --platform linux/amd64 \
         --cache-dir "{{ cache_root }}" \
-    	--package swanpan-chnroute \
-    	--package swanpan-chinadns-ng \
-    	--package swanpan-mwan3-patch \
-    	--package swanpan-luci-app-mwan3-patch \
-    	--output "{{ output_root }}/ERX/{{ version }}"
+        --package swanpan-chnroute \
+        --package swanpan-chinadns-ng \
+        --package swanpan-mwan3-patch \
+        --package swanpan-luci-app-mwan3-patch \
+        --output "{{ output_root }}/ERX/{{ version }}"
 
 # Ubiquiti EdgeRouter 4 (octeon/generic, mips64_octeonplus).
 ER4 version="25.12.5":
     ./scripts/build-sdk.sh \
-    	--openwrt-version "{{ version }}" \
-    	--sdk-image "openwrt/sdk:octeon-generic-{{ version }}" \
-    	--platform linux/amd64 \
+        --openwrt-version "{{ version }}" \
+        --sdk-image "openwrt/sdk:octeon-generic-{{ version }}" \
+        --platform linux/amd64 \
         --cache-dir "{{ cache_root }}" \
-    	--package swanpan-chnroute \
-    	--package swanpan-chinadns-ng \
-    	--package swanpan-mwan3-patch \
-    	--package swanpan-luci-app-mwan3-patch \
-    	--output "{{ output_root }}/ER4/{{ version }}"
+        --package swanpan-chnroute \
+        --package swanpan-chinadns-ng \
+        --package swanpan-mwan3-patch \
+        --package swanpan-luci-app-mwan3-patch \
+        --output "{{ output_root }}/ER4/{{ version }}"
 
 # Ubiquiti EdgeRouter Pro ERPro-8 (octeon/generic, mips64_octeonplus).
 ERPRO version="25.12.5":
@@ -119,28 +119,28 @@ ERPRO version="25.12.5":
 # Ubiquiti EdgeRouter Lite (octeon/generic, mips64_octeonplus).
 ERLITE version="25.12.5":
     ./scripts/build-sdk.sh \
-    	--openwrt-version "{{ version }}" \
-    	--sdk-image "openwrt/sdk:octeon-generic-{{ version }}" \
-    	--platform linux/amd64 \
+        --openwrt-version "{{ version }}" \
+        --sdk-image "openwrt/sdk:octeon-generic-{{ version }}" \
+        --platform linux/amd64 \
         --cache-dir "{{ cache_root }}" \
-    	--package swanpan-chnroute \
-    	--package swanpan-chinadns-ng \
-    	--package swanpan-mwan3-patch \
-    	--package swanpan-luci-app-mwan3-patch \
-    	--output "{{ output_root }}/ERLITE/{{ version }}"
+        --package swanpan-chnroute \
+        --package swanpan-chinadns-ng \
+        --package swanpan-mwan3-patch \
+        --package swanpan-luci-app-mwan3-patch \
+        --output "{{ output_root }}/ERLITE/{{ version }}"
 
 # Ubiquiti UniFi Security Gateway (octeon/generic, mips64_octeonplus).
 USG version="25.12.5":
     ./scripts/build-sdk.sh \
-    	--openwrt-version "{{ version }}" \
-    	--sdk-image "openwrt/sdk:octeon-generic-{{ version }}" \
-    	--platform linux/amd64 \
+        --openwrt-version "{{ version }}" \
+        --sdk-image "openwrt/sdk:octeon-generic-{{ version }}" \
+        --platform linux/amd64 \
         --cache-dir "{{ cache_root }}" \
-    	--package swanpan-chnroute \
-    	--package swanpan-chinadns-ng \
-    	--package swanpan-mwan3-patch \
-    	--package swanpan-luci-app-mwan3-patch \
-    	--output "{{ output_root }}/USG/{{ version }}"
+        --package swanpan-chnroute \
+        --package swanpan-chinadns-ng \
+        --package swanpan-mwan3-patch \
+        --package swanpan-luci-app-mwan3-patch \
+        --output "{{ output_root }}/USG/{{ version }}"
 
 # Generic x86/64 (x86/64, x86_64).
 X86_64 version="25.12.5":
