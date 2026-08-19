@@ -49,6 +49,27 @@ src-link swanpan /absolute/path/swanpan-openwrt-feed
 
 ## 构建
 
+### GitHub Actions 构建
+
+推送名称以 `v` 开头的 Git 标签会自动触发完整构建，并创建同名 GitHub Release：
+
+```sh
+git tag v2026.08.19
+git push origin v2026.08.19
+```
+
+标签触发的工作流固定使用 `ALL`，按 7 组不同的 SDK 环境并行构建。也可以打开仓库的
+**Actions** 页面，选择 **Build and publish packages**，点击 **Run workflow**，填写一个
+尚未使用的 `release_tag`，例如 `packages-2026.08.19`，然后选择 `ALL` 或单个设备配方。
+手动运行时，工作流从选定的分支或提交构建，并创建 `release_tag` 对应的 Git 标签和
+GitHub Release。已存在的 Release 或手动输入的标签不会被覆盖。
+
+构建成功后，工作流自动创建一个 GitHub Release。每个设备对应一个
+`swanpan-<设备>.tar.gz`，其中保留设备目录结构，并包含 APK 或 IPK 以及 `build.env`；
+Release 同时提供总 `SHA256SUMS`。Release 及其下载文件不会按 Actions Artifact 的保留期限
+自动过期，除非手动删除。工作流内部使用的临时 Artifact 仅用于在构建 job 和发布 job 之间
+传递文件，保留 1 天。
+
 ### 设备预设
 
 根目录的 `justfile` 提供按设备维护的构建配置。常规设备配方默认使用 OpenWrt 25.12.5。

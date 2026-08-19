@@ -1,0 +1,323 @@
+name: Build and publish packages
+
+run-name: >-
+  Publish ${{ github.event_name == 'push' && github.ref_name ||
+  inputs.release_tag }} for ${{ github.event_name == 'push' && 'ALL' ||
+  inputs.target }}
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: New Git tag for the downloadable release
+        required: true
+        type: string
+      target:
+        description: Device recipe to build
+        required: true
+        default: ALL
+        type: choice
+        options:
+          - ALL
+          - MT3600BE
+          - MT3000
+          - MT2500
+          - XE300
+          - E5800
+          - BE3600
+          - ERX
+          - ER4
+          - ERPRO
+          - ERLITE
+          - USG
+          - X86_64
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-packages-${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Check sources and prepare matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      release_tag: ${{ steps.parameters.outputs.release_tag }}
+      target: ${{ steps.parameters.outputs.target }}
+
+    steps:
+      - name: Resolve release parameters
+        id: parameters
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+          INPUT_TARGET: ${{ inputs.target }}
+          REF_NAME: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            push)
+              release_tag=$REF_NAME
+              target=ALL
+              ;;
+            workflow_dispatch)
+              release_tag=$INPUT_RELEASE_TAG
+              target=$INPUT_TARGET
+              ;;
+            *)
+              printf 'Unsupported event: %s\n' "$EVENT_NAME" >&2
+              exit 1
+              ;;
+          esac
+
+          printf 'release_tag=%s\n' "$release_tag" >> "$GITHUB_OUTPUT"
+          printf 'target=%s\n' "$target" >> "$GITHUB_OUTPUT"
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends just shellcheck
+
+      - name: Validate sources
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.parameters.outputs.release_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$RELEASE_TAG" in
+            ''|[-.]*|*[!A-Za-z0-9._-]*)
+              printf 'Invalid release tag: %s\n' "$RELEASE_TAG" >&2
+              exit 1
+              ;;
+          esac
+          git check-ref-format "refs/tags/$RELEASE_TAG"
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            if gh api \
+              "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" \
+              >/dev/null 2>&1; then
+              printf 'Release tag already exists: %s\n' "$RELEASE_TAG" >&2
+              exit 1
+            fi
+          fi
+          git diff --check
+          just --list >/dev/null
+
+          mapfile -t source_files < <(rg --files scripts tests swanpan-*)
+          shell_files=()
+          for source_file in "${source_files[@]}"; do
+            if [ "$(sed -n '1p' "$source_file")" = '#!/bin/sh' ]; then
+              shell_files+=("$source_file")
+            fi
+          done
+          [ "${#shell_files[@]}" -gt 0 ]
+          for shell_file in "${shell_files[@]}"; do
+            sh -n "$shell_file"
+          done
+          shellcheck "${shell_files[@]}"
+
+          tests/test-build-sdk-cache.sh
+
+      - name: Prepare build matrix
+        id: matrix
+        env:
+          REQUESTED_TARGET: ${{ steps.parameters.outputs.target }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "$REQUESTED_TARGET" in
+            ALL)
+              matrix=$(jq -cn '{include: [
+                {group: "filogic-current", recipes: "MT3600BE MT3000 MT2500", artifact: "MT3600BE-MT3000-MT2500"},
+                {group: "ath79-xe300", recipes: "XE300", artifact: "XE300"},
+                {group: "filogic-e5800", recipes: "E5800", artifact: "E5800"},
+                {group: "filogic-be3600", recipes: "BE3600", artifact: "BE3600"},
+                {group: "ramips-erx", recipes: "ERX", artifact: "ERX"},
+                {group: "octeon-current", recipes: "ER4 ERPRO ERLITE USG", artifact: "ER4-ERPRO-ERLITE-USG"},
+                {group: "x86-64-current", recipes: "X86_64", artifact: "X86_64"}
+              ]}')
+              ;;
+            MT3600BE|MT3000|MT2500)
+              group=filogic-current
+              ;;
+            XE300)
+              group=ath79-xe300
+              ;;
+            E5800)
+              group=filogic-e5800
+              ;;
+            BE3600)
+              group=filogic-be3600
+              ;;
+            ERX)
+              group=ramips-erx
+              ;;
+            ER4|ERPRO|ERLITE|USG)
+              group=octeon-current
+              ;;
+            X86_64)
+              group=x86-64-current
+              ;;
+            *)
+              printf 'Unsupported target: %s\n' "$REQUESTED_TARGET" >&2
+              exit 1
+              ;;
+          esac
+
+          if [ "$REQUESTED_TARGET" != ALL ]; then
+            matrix=$(jq -cn \
+              --arg group "$group" \
+              --arg recipes "$REQUESTED_TARGET" \
+              --arg artifact "$REQUESTED_TARGET" \
+              '{include: [{group: $group, recipes: $recipes, artifact: $artifact}]}')
+          fi
+
+          printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.artifact }}
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install just
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends just
+
+      - name: Restore SDK downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: dist/.cache/downloads
+          key: openwrt-dl-v1-${{ matrix.group }}-${{ hashFiles('swanpan-*/Makefile', 'justfile') }}
+          restore-keys: |
+            openwrt-dl-v1-${{ matrix.group }}-
+
+      - name: Build and archive packages
+        env:
+          BUILD_RECIPES: ${{ matrix.recipes }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir handoff
+
+          for recipe in $BUILD_RECIPES; do
+            JOBS="$(nproc)" just "$recipe"
+            tar -C dist -czf "handoff/swanpan-$recipe.tar.gz" "$recipe"
+          done
+
+      - name: Upload release handoff
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: swanpan-${{ matrix.artifact }}
+          path: handoff/
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  release:
+    name: Publish GitHub Release
+    needs:
+      - prepare
+      - build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download built packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: swanpan-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t archives < <(
+            find release-assets -maxdepth 1 -type f \
+              -name 'swanpan-*.tar.gz' -print | LC_ALL=C sort
+          )
+          [ "${#archives[@]}" -gt 0 ]
+
+          (
+            cd release-assets
+            sha256sum swanpan-*.tar.gz > SHA256SUMS
+          )
+
+      - name: Create GitHub Release
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+          REQUESTED_TARGET: ${{ needs.prepare.outputs.target }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            printf 'Release already exists: %s\n' "$RELEASE_TAG" >&2
+            exit 1
+          fi
+
+          release_options=()
+          case "$EVENT_NAME" in
+            push)
+              release_options+=(--verify-tag)
+              ;;
+            workflow_dispatch)
+              if gh api \
+                "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" \
+                >/dev/null 2>&1; then
+                printf 'Release tag already exists: %s\n' "$RELEASE_TAG" >&2
+                exit 1
+              fi
+              release_options+=(--target "$GITHUB_SHA")
+              ;;
+            *)
+              printf 'Unsupported event: %s\n' "$EVENT_NAME" >&2
+              exit 1
+              ;;
+          esac
+
+          release_title="Swanpan packages $RELEASE_TAG ($REQUESTED_TARGET)"
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          release_notes=$(printf \
+            'Built from commit %s.\n\nRequested target: %s\nWorkflow run: %s\n' \
+            "$GITHUB_SHA" "$REQUESTED_TARGET" "$run_url")
+
+          gh release create "$RELEASE_TAG" \
+            release-assets/SHA256SUMS \
+            release-assets/swanpan-*.tar.gz \
+            "${release_options[@]}" \
+            --title "$release_title" \
+            --notes "$release_notes" \
+            --latest
