@@ -117,7 +117,9 @@ jobs:
           git diff --check
           just --list >/dev/null
 
-          mapfile -t source_files < <(rg --files scripts tests swanpan-*)
+          mapfile -d '' -t source_files < <(
+            git ls-files -z -- scripts tests 'swanpan-*'
+          )
           shell_files=()
           for source_file in "${source_files[@]}"; do
             if [ "$(sed -n '1p' "$source_file")" = '#!/bin/sh' ]; then
