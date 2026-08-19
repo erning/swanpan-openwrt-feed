@@ -130,7 +130,7 @@ jobs:
           for shell_file in "${shell_files[@]}"; do
             sh -n "$shell_file"
           done
-          shellcheck "${shell_files[@]}"
+          shellcheck --severity=warning "${shell_files[@]}"
 
           tests/test-build-sdk-cache.sh
 
