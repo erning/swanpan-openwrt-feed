@@ -133,10 +133,16 @@ case "$openwrt_version" in
 		;;
 esac
 
+sdk_target_hint=
 case "$sdk_image" in
 	openwrt/sdk:*|docker.io/openwrt/sdk:*)
 		case "$sdk_image" in
-			*-"$openwrt_version") ;;
+			*-"$openwrt_version")
+				sdk_target_hint=${sdk_image##*:}
+				sdk_target_hint=${sdk_target_hint%"-$openwrt_version"}
+				sdk_target_hint=$(printf '%s\n' "$sdk_target_hint" |
+					sed 's|-|/|')
+				;;
 			*) die "SDK image tag does not match OpenWrt $openwrt_version" ;;
 		esac
 		;;
@@ -460,6 +466,7 @@ if [ "$cache_hit" -eq 0 ]; then
 	[ -z "$docker_pull_policy" ] || set -- "$@" --pull "$docker_pull_policy"
 	set -- "$@" \
 		-e "EXPECTED_OPENWRT_VERSION=$openwrt_version" \
+		-e "SDK_TARGET_HINT=$sdk_target_hint" \
 		-e "OUTPUT_PACKAGES=$output_packages" \
 		-e "BUILD_JOBS=$jobs" \
 		-v "$REPO_ROOT:/feed:ro" \
@@ -471,22 +478,29 @@ if [ "$cache_hit" -eq 0 ]; then
 	set -- "$@" "$sdk_image" /bin/sh -eu -c '
 		cd /builder
 
-		[ -n "${VERSION_PATH:-}" ] || {
-			echo "error: SDK image does not declare VERSION_PATH" >&2
-			exit 1
-		}
-		[ -n "${TARGET:-}" ] || {
-			echo "error: SDK image does not declare TARGET" >&2
-			exit 1
-		}
-
-		case "$VERSION_PATH" in
+		if [ -n "${VERSION_PATH:-}" ]; then
+			case "$VERSION_PATH" in
 			"releases/$EXPECTED_OPENWRT_VERSION") ;;
 			*)
 				echo "error: SDK release $VERSION_PATH does not match $EXPECTED_OPENWRT_VERSION" >&2
 				exit 1
 				;;
-		esac
+			esac
+		else
+			sdk_version=$(sed -n \
+				"s|^VERSION_REPO:=.*releases/\\([^)]*\\))$|\\1|p" \
+				include/version.mk)
+			[ "$sdk_version" = "$EXPECTED_OPENWRT_VERSION" ] || {
+				echo "error: SDK release $sdk_version does not match $EXPECTED_OPENWRT_VERSION" >&2
+				exit 1
+			}
+		fi
+
+		sdk_target=${TARGET:-$SDK_TARGET_HINT}
+		[ -n "$sdk_target" ] || {
+			echo "error: unable to determine the SDK target" >&2
+			exit 1
+		}
 
 		cp feeds.conf.default feeds.conf
 		sed -i "/^[[:space:]]*src-[^[:space:]]*[[:space:]][[:space:]]*swanpan[[:space:]]/d" feeds.conf
@@ -521,7 +535,7 @@ if [ "$cache_hit" -eq 0 ]; then
 				-exec cp -f {} /output/ \;
 		done
 
-		printf "%s\n" "$TARGET" > /output/sdk.target
+		printf "%s\n" "$sdk_target" > /output/sdk.target
 	'
 	"$@"
 
