@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=swanpan-chinadns-ng
 PKG_VERSION:=2026.08.16
-PKG_RELEASE:=3
+PKG_RELEASE:=4
 
 CHINADNS_RELEASE_TAG:=2026.08.16-c
 
@@ -88,7 +88,7 @@ define Package/swanpan-chinadns-ng
   CATEGORY:=Network
   SUBMENU:=Swanpan
   TITLE:=ChinaDNS-NG static release
-  DEPENDS:=@(aarch64||arm||i386||mips||mipsel||mips64||mips64el||riscv64||x86_64) +swanpan-chnroute
+  DEPENDS:=@(aarch64||arm||i386||mips||mipsel||mips64||mips64el||riscv64||x86_64) +swanpan-chnroute +swanpan-netseed
 endef
 
 define Package/swanpan-chinadns-ng/description

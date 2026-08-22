@@ -1,0 +1,10 @@
+#!/bin/sh /etc/rc.common
+# shellcheck disable=SC2034 # OpenWrt rc.common reads START.
+
+START=17
+
+start() {
+	[ -x /usr/sbin/netseed ] || return 1
+	[ -d /etc/netseed ] || return 1
+	/usr/sbin/netseed load --all
+}

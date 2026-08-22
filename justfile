@@ -15,6 +15,7 @@ MT3600BE version="25.12.5":
         --cache-dir "{{ cache_root }}" \
         --package swanpan-usb-wan-name \
         --package swanpan-chnroute \
+        --package swanpan-netseed \
         --package swanpan-chinadns-ng \
         --package swanpan-mwan3-patch \
         --package swanpan-luci-app-mwan3-patch \
@@ -29,6 +30,7 @@ MT3000 version="25.12.5":
         --cache-dir "{{ cache_root }}" \
         --package swanpan-usb-wan-name \
         --package swanpan-chnroute \
+        --package swanpan-netseed \
         --package swanpan-chinadns-ng \
         --package swanpan-mwan3-patch \
         --package swanpan-luci-app-mwan3-patch \
@@ -42,6 +44,7 @@ MT2500 version="25.12.5":
         --platform linux/amd64 \
         --cache-dir "{{ cache_root }}" \
         --package swanpan-chnroute \
+        --package swanpan-netseed \
         --package swanpan-chinadns-ng \
         --package swanpan-mwan3-patch \
         --package swanpan-luci-app-mwan3-patch \
@@ -55,6 +58,7 @@ XE300 version="22.03.4":
         --platform linux/amd64 \
         --cache-dir "{{ cache_root }}" \
         --package swanpan-chnroute \
+        --package swanpan-netseed \
         --output "{{ output_root }}/XE300/vendor-4.3.27"
 
 # GL.iNet GL-E5800 Mudi 7 (vendor firmware 4.8.5, QuecOpen/OpenWrt 23.05.4).
@@ -65,6 +69,7 @@ E5800 version="23.05.4":
         --platform linux/amd64 \
         --cache-dir "{{ cache_root }}" \
         --package swanpan-chnroute \
+        --package swanpan-netseed \
         --output "{{ output_root }}/E5800/vendor-4.8.5"
 
 # GL.iNet GL-BE3600 Slate 7 (vendor firmware 4.9.0, QSDK/OpenWrt 23.05).
@@ -75,6 +80,7 @@ BE3600 version="23.05.6":
         --platform linux/amd64 \
         --cache-dir "{{ cache_root }}" \
         --package swanpan-chnroute \
+        --package swanpan-netseed \
         --output "{{ output_root }}/BE3600/vendor-4.9.0"
 
 # Ubiquiti EdgeRouter X (ramips/mt7621, mipsel_24kc).
@@ -85,6 +91,7 @@ ERX version="25.12.5":
         --platform linux/amd64 \
         --cache-dir "{{ cache_root }}" \
         --package swanpan-chnroute \
+        --package swanpan-netseed \
         --package swanpan-chinadns-ng \
         --package swanpan-mwan3-patch \
         --package swanpan-luci-app-mwan3-patch \
@@ -98,6 +105,7 @@ ER4 version="25.12.5":
         --platform linux/amd64 \
         --cache-dir "{{ cache_root }}" \
         --package swanpan-chnroute \
+        --package swanpan-netseed \
         --package swanpan-chinadns-ng \
         --package swanpan-mwan3-patch \
         --package swanpan-luci-app-mwan3-patch \
@@ -111,6 +119,7 @@ ERPRO version="25.12.5":
         --platform linux/amd64 \
         --cache-dir "{{ cache_root }}" \
         --package swanpan-chnroute \
+        --package swanpan-netseed \
         --package swanpan-chinadns-ng \
         --package swanpan-mwan3-patch \
         --package swanpan-luci-app-mwan3-patch \
@@ -124,6 +133,7 @@ ERLITE version="25.12.5":
         --platform linux/amd64 \
         --cache-dir "{{ cache_root }}" \
         --package swanpan-chnroute \
+        --package swanpan-netseed \
         --package swanpan-chinadns-ng \
         --package swanpan-mwan3-patch \
         --package swanpan-luci-app-mwan3-patch \
@@ -137,6 +147,7 @@ USG version="25.12.5":
         --platform linux/amd64 \
         --cache-dir "{{ cache_root }}" \
         --package swanpan-chnroute \
+        --package swanpan-netseed \
         --package swanpan-chinadns-ng \
         --package swanpan-mwan3-patch \
         --package swanpan-luci-app-mwan3-patch \
@@ -150,6 +161,7 @@ X86_64 version="25.12.5":
         --platform linux/amd64 \
         --cache-dir "{{ cache_root }}" \
         --package swanpan-chnroute \
+        --package swanpan-netseed \
         --package swanpan-chinadns-ng \
         --package swanpan-mwan3-patch \
         --package swanpan-luci-app-mwan3-patch \
