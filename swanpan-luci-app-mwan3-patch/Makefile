@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=swanpan-luci-app-mwan3-patch
 PKG_VERSION:=1.0.0
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 
 PKG_LICENSE:=GPL-2.0-only
 PKG_MAINTAINER:=Zhang Erning <zhang@erning.com>
@@ -13,15 +13,15 @@ define Package/swanpan-luci-app-mwan3-patch
   SECTION:=luci
   CATEGORY:=LuCI
   SUBMENU:=3. Applications
-  TITLE:=LuCI source ipset matching patch for mwan3
+  TITLE:=LuCI source ipset and local traffic patch for mwan3
   DEPENDS:=+luci-app-mwan3 +swanpan-mwan3-patch
   CONFLICTS:=luci-app-mwan3-src-ipset
   PKGARCH:=all
 endef
 
 define Package/swanpan-luci-app-mwan3-patch/description
- Adds "ipset_src" UI support to luci-app-mwan3 rules by installing a
- version-matched LuCI overlay on the target device.
+ Adds "ipset_src" and "ipset_src_local" UI support to luci-app-mwan3
+ rules by installing a version-matched LuCI overlay on the target device.
 endef
 
 define Package/swanpan-luci-app-mwan3-patch/install

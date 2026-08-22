@@ -1,6 +1,7 @@
 # swanpan-luci-app-mwan3-patch
 
-`swanpan-luci-app-mwan3-patch` is an overlay package that adds a new LuCI rule option `ipset_src` to `luci-app-mwan3`.
+`swanpan-luci-app-mwan3-patch` is an overlay package that adds the LuCI rule
+options `ipset_src` and `ipset_src_local` to `luci-app-mwan3`.
 
 It replaces the installed LuCI JS view on-device at install time (no need to rebuild `luci-app-mwan3`).
 
@@ -10,8 +11,10 @@ In `/etc/config/mwan3` rule sections, `mwan3` supports:
 
 - `option ipset <setname>`: match destination via ipset (existing)
 - `option ipset_src <setname>`: match source via ipset (added by `swanpan-mwan3-patch`)
+- `option ipset_src_local '1'`: allow router-originated traffic to use the rule
+  without matching `ipset_src`, while forwarded traffic remains restricted
 
-This overlay package makes the LuCI rules UI expose the `ipset_src` field so you can configure it from the web UI.
+This overlay package exposes both fields in the LuCI rules UI.
 
 ## Files touched
 
@@ -60,9 +63,10 @@ After installing, go to:
 
 - Network → MultiWAN Manager → Rules
 
-You should see a new field:
+You should see these fields:
 
 - `IPset source` (`ipset_src`)
+- `Allow router-originated traffic` (`ipset_src_local`)
 
 It is populated from the output of:
 
@@ -78,6 +82,7 @@ config rule 'src_example'
 	option proto 'all'
 	option use_policy 'wan'
 	option ipset_src 'my_src_set'
+	option ipset_src_local '1'
 	option logging '1'
 ```
 
@@ -184,11 +189,11 @@ The script will extract the embedded commit hash and regenerate the matching ove
 - Install fails with `no overlay found`:
   - Check the device `luci-app-mwan3` version and generate a matching overlay directory
 
-- `IPset source` field not shown:
+- The added fields are not shown:
   - Ensure the overlay package is installed: `apk info swanpan-luci-app-mwan3-patch`
   - Force refresh the browser cache (or hard reload)
-  - Check the installed JS contains `ipset_src`:
+  - Check the installed JS contains `ipset_src_local`:
 
     ```sh
-    grep -n "ipset_src" /www/luci-static/resources/view/mwan3/network/rule.js
+    grep -n "ipset_src_local" /www/luci-static/resources/view/mwan3/network/rule.js
     ```

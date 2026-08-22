@@ -14,6 +14,7 @@ mwan3_version=""
 status_file="${root}/usr/lib/opkg/status"
 
 patch_dir="${root}/usr/share/swanpan-mwan3-patch/patches"
+local_patch_dir="${root}/usr/share/swanpan-mwan3-patch/patches-local"
 
 
 die() {
@@ -31,6 +32,45 @@ apply_patch_in_dir() {
 		cd "$1"
 		patch -p0 < "$2" >/dev/null 2>&1 || patch < "$2" >/dev/null 2>&1
 	)
+}
+
+new_temp_dir() {
+	tmpbase="${root}/tmp"
+	[ -z "${root}" ] && tmpbase="/tmp"
+	mkdir -p "${tmpbase}" 2>/dev/null || true
+
+	mktemp -d "${tmpbase}/${pkg}.XXXXXX" 2>/dev/null || true
+}
+
+select_patch() {
+	# Sets selected_patch to the first patch that applies to source_file.
+	#
+	# $1: source mwan3.sh
+	# $2: directory containing candidate patches
+	source_file="$1"
+	source_patch_dir="$2"
+	selected_patch=""
+
+	set -- "${source_patch_dir}"/*.patch
+	[ -e "${1}" ] || return 1
+
+	for p in "${source_patch_dir}"/*.patch; do
+		tmpdir="$(new_temp_dir)"
+		[ -n "${tmpdir}" ] || die "failed to create temp dir"
+
+		mkdir -p "${tmpdir}/lib/mwan3"
+		cp -fp "${source_file}" "${tmpdir}/lib/mwan3/mwan3.sh"
+
+		if apply_patch_in_dir "${tmpdir}" "${p}"; then
+			selected_patch="${p}"
+			rm -rf "${tmpdir}" >/dev/null 2>&1 || true
+			return 0
+		fi
+
+		rm -rf "${tmpdir}" >/dev/null 2>&1 || true
+	done
+
+	return 1
 }
 
 if [ -z "${IPKG_INSTROOT:-}" ] && command -v apk >/dev/null 2>&1; then
@@ -51,37 +91,25 @@ if [ ! -f "${dst}" ]; then
 	exit 0
 fi
 
-if grep -q "\bipset_src\b" "${dst}"; then
+if grep -q "\bmwan3_rules_output\b" "${dst}" &&
+	grep -q "\bipset_src_local\b" "${dst}"; then
 	exit 0
 fi
 
-chosen_patch=""
-set -- "${patch_dir}"/*.patch
-[ -e "${1}" ] || die "no patches installed under ${patch_dir}"
+# Release 1 patched this file in place and left the pristine upstream file in
+# ${backup}. Restore that copy before selecting the two release 2 patches.
+# Package managers do not consistently run the old postrm during an in-place
+# upgrade, so handle both upgrade paths here.
+if grep -q "\bipset_src\b" "${dst}"; then
+	[ -f "${backup}" ] || die "legacy ipset_src patch detected but ${backup} is missing"
+	cp -fp "${backup}" "${dst}" || die "failed to restore ${dst} before upgrade"
+fi
 
 command -v patch >/dev/null 2>&1 || die "patch command not found (install package 'patch')"
 
-for p in "${patch_dir}"/*.patch; do
-	tmpbase="${root}/tmp"
-	[ -z "${root}" ] && tmpbase="/tmp"
-	mkdir -p "${tmpbase}" 2>/dev/null || true
-
-	tmpdir="$(mktemp -d "${tmpbase}/${pkg}.XXXXXX" 2>/dev/null || true)"
-	[ -n "${tmpdir}" ] || die "failed to create temp dir under ${tmpbase}"
-
-	mkdir -p "${tmpdir}/lib/mwan3"
-	cp -fp "${dst}" "${tmpdir}/lib/mwan3/mwan3.sh"
-
-	if apply_patch_in_dir "${tmpdir}" "${p}"; then
-		chosen_patch="${p}"
-		rm -rf "${tmpdir}" >/dev/null 2>&1 || true
-		break
-	fi
-
-	rm -rf "${tmpdir}" >/dev/null 2>&1 || true
-done
-
-if [ -z "${chosen_patch}" ]; then
+if select_patch "${dst}" "${patch_dir}"; then
+	chosen_base_patch="${selected_patch}"
+else
 	sha256=""
 	if command -v sha256sum >/dev/null 2>&1; then
 		sha256="$(sha256sum "${dst}" | awk '{print $1}')"
@@ -91,19 +119,40 @@ if [ -z "${chosen_patch}" ]; then
 		sha256="$(openssl dgst -sha256 "${dst}" | awk '{print $NF}')"
 	fi
 
-	die "no compatible patch found (mwan3_version=${mwan3_version:-unknown} sha256=${sha256:-unknown})"
+	die "no compatible source-IPset patch found (mwan3_version=${mwan3_version:-unknown} sha256=${sha256:-unknown})"
 fi
 
-echo "${pkg}: applying $(basename "${chosen_patch}") for mwan3_version=${mwan3_version:-unknown}" >&2
+stagedir="$(new_temp_dir)"
+[ -n "${stagedir}" ] || die "failed to create staging directory"
+mkdir -p "${stagedir}/lib/mwan3"
+cp -fp "${dst}" "${stagedir}/lib/mwan3/mwan3.sh"
+
+if ! apply_patch_in_dir "${stagedir}" "${chosen_base_patch}"; then
+	rm -rf "${stagedir}" >/dev/null 2>&1 || true
+	die "failed to stage patch $(basename "${chosen_base_patch}")"
+fi
+
+if select_patch "${stagedir}/lib/mwan3/mwan3.sh" "${local_patch_dir}"; then
+	chosen_local_patch="${selected_patch}"
+else
+	rm -rf "${stagedir}" >/dev/null 2>&1 || true
+	die "no compatible local-traffic patch found under ${local_patch_dir}"
+fi
+
+rm -rf "${stagedir}" >/dev/null 2>&1 || true
+
+echo "${pkg}: applying $(basename "${chosen_base_patch}") and $(basename "${chosen_local_patch}") for mwan3_version=${mwan3_version:-unknown}" >&2
 
 cp -fp "${dst}" "${backup}" || die "failed to back up ${dst}"
 
-if ! (
-	cd "${root}"
-	patch -p0 < "${chosen_patch}" >/dev/null 2>&1 || patch < "${chosen_patch}" >/dev/null 2>&1
-); then
+if ! apply_patch_in_dir "${root}" "${chosen_base_patch}"; then
 	[ -f "${backup}" ] && cp -fp "${backup}" "${dst}" || true
-	die "failed to apply patch $(basename "${chosen_patch}")"
+	die "failed to apply patch $(basename "${chosen_base_patch}")"
+fi
+
+if ! apply_patch_in_dir "${root}" "${chosen_local_patch}"; then
+	[ -f "${backup}" ] && cp -fp "${backup}" "${dst}" || true
+	die "failed to apply patch $(basename "${chosen_local_patch}")"
 fi
 
 if [ -z "${IPKG_INSTROOT:-}" ] && [ -x /etc/init.d/mwan3 ]; then

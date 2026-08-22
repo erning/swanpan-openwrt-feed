@@ -133,6 +133,7 @@ jobs:
           shellcheck --severity=warning "${shell_files[@]}"
 
           tests/test-build-sdk-cache.sh
+          tests/test-mwan3-local-source.sh
 
       - name: Prepare build matrix
         id: matrix

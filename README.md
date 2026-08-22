@@ -12,8 +12,8 @@ GL-BE3600 的厂商固件构建特定的软件包组合。
 | `swanpan-chnroute` | 下载、验证、持久化并恢复 IPv4 和 IPv6 CIDR ipset |
 | `swanpan-netseed` | 从本地预设文件创建、重新加载和卸载 ipset |
 | `swanpan-chinadns-ng` | 安装与目标架构匹配的静态 ChinaDNS-NG、默认配置和 procd 服务 |
-| `swanpan-mwan3-patch` | 为 mwan3 规则增加基于源地址 ipset 的匹配条件 |
-| `swanpan-luci-app-mwan3-patch` | 在 LuCI 的 mwan3 规则界面中增加源地址 ipset 字段 |
+| `swanpan-mwan3-patch` | 为 mwan3 规则增加源地址 IP 集合条件，以及路由器本机流量例外 |
+| `swanpan-luci-app-mwan3-patch` | 在 LuCI 的 mwan3 规则界面中增加对应配置项 |
 
 `swanpan-chnroute` 在构建时包含一份固定提交的初始数据。因此，新安装无需先联网下载
 CIDR 数据即可恢复 ipset；安装后仍可运行 `chnroute update` 获取新数据。
@@ -53,6 +53,13 @@ chnroute 或 netseed 脚本，但 `swanpan-chinadns-ng` 随包提供的默认配
 两个 mwan3 补丁包会在目标设备上修改已安装的软件包文件。后端包按
 `/lib/mwan3/mwan3.sh` 的内容选择兼容补丁，LuCI 包按已安装版本选择预生成的界面覆盖
 文件。升级 `mwan3` 或 `luci-app-mwan3` 后，需要重新安装对应补丁包。
+
+后端补丁支持 `ipset_src` 与 `ipset_src_local`。前者要求转发流量的源地址属于指定 IP
+集合；后者启用后，会为路由器本机生成的流量增加一条不检查源地址集合的同等规则，
+以适应 PPPoE 等接口动态取得源地址的情况。OpenWrt 25.12 使用独立的
+`mwan3_rules_output` 处理本机 `OUTPUT` 流量，转发流量仍进入保留来源 IP 集合检查的
+`mwan3_rules`，因此不会放宽客户端转发条件。LuCI 中对应的开关使用英文标签
+`Allow router-originated traffic`。
 
 ## 添加 Feed
 
