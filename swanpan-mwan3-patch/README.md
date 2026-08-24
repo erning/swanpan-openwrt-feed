@@ -32,6 +32,12 @@ retains the rule's protocol, source/destination address, destination ipset, port
 mark, and policy conditions. The option has no effect unless `ipset_src` is also
 configured.
 
+When `ipset_src_local` and `sticky` are both enabled, sticky selection applies
+only to forwarded traffic. Router-originated traffic jumps directly to the
+configured policy so a shared router source address cannot pin local connections
+to a sticky member. Conntrack marks still keep each established connection on
+one interface.
+
 ## Usage
 
 ### 1) Install

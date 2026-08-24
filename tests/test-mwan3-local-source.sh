@@ -21,6 +21,8 @@ grep -Fq 'config_get ipset_src' "$BASE_PATCH_FILE"
 grep -Fq 'config_get_bool ipset_src_local' "$LOCAL_PATCH_FILE"
 grep -Fq 'mwan3_output_hook' "$LOCAL_PATCH_FILE"
 grep -Fq 'mwan3_rules_output' "$LOCAL_PATCH_FILE"
+grep -Fq 'output_policy="mwan3_policy_$use_policy"' "$LOCAL_PATCH_FILE"
+grep -Fq -- '-j $output_policy' "$LOCAL_PATCH_FILE"
 [ "$(grep -Fc '! -i +' "$LOCAL_PATCH_FILE")" -eq 0 ]
 grep -Fq 'legacy ipset_src patch detected' "$POSTINST"
 
@@ -55,6 +57,8 @@ sh -n "$root/lib/mwan3/mwan3.sh"
 grep -Fq 'config_get_bool ipset_src_local' "$root/lib/mwan3/mwan3.sh"
 grep -Fq 'mwan3_output_hook' "$root/lib/mwan3/mwan3.sh"
 grep -Fq 'mwan3_rules_output' "$root/lib/mwan3/mwan3.sh"
+grep -Fq 'output_policy="mwan3_policy_$use_policy"' "$root/lib/mwan3/mwan3.sh"
+grep -Fq -- '-j $output_policy' "$root/lib/mwan3/mwan3.sh"
 [ "$(grep -Fc '! -i +' "$root/lib/mwan3/mwan3.sh")" -eq 0 ]
 [ -f "$root/lib/mwan3/mwan3.sh.orig.swanpan-mwan3-patch" ]
 

@@ -89,7 +89,7 @@
  mwan3_set_user_iptables_rule()
  {
 -	local ipset ipset_src family proto policy src_ip src_port src_iface src_dev
-+	local ipset ipset_src ipset_src_local output_ipset_src output_src_dev
++	local ipset ipset_src ipset_src_local output_ipset_src output_policy output_src_dev
 +	local family proto policy src_ip src_port src_iface src_dev
  	local sticky dest_ip dest_port use_policy timeout policy
  	local global_logging rule_logging loglevel rule_policy rule ipv
@@ -127,9 +127,14 @@
  	fi
  
  	if [ -z "$use_policy" ]; then
-@@ -900,6 +968,31 @@
+@@ -900,6 +968,36 @@
  		policy="mwan3_rule_$1"
  	fi
++	output_policy="$policy"
++	if [ "$ipset_src_local" -eq 1 ] && [ $rule_policy -eq 1 ] && [ "$sticky" -eq 1 ]; then
++		output_policy="mwan3_policy_$use_policy"
++	fi
++
  	if [ "$global_logging" = "1" ] && [ "$rule_logging" = "1" ]; then
 +		mwan3_push_update -A mwan3_rules_output \
 +				  -p "$proto" \
@@ -153,7 +158,7 @@
 +			  ${src_port:+-m} ${src_port:+multiport} ${src_port:+--sports} $src_port \
 +			  ${dest_port:+-m} ${dest_port:+multiport} ${dest_port:+--dports} $dest_port \
 +			  -m mark --mark 0/$MMX_MASK \
-+			  -j $policy
++			  -j $output_policy
 +
 +	if [ "$global_logging" = "1" ] && [ "$rule_logging" = "1" ]; then
  		mwan3_push_update -A mwan3_rules \
