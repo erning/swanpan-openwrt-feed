@@ -153,6 +153,23 @@ the first matching variant.
 If you're using a vendor fork (e.g. GL.iNet), your `mwan3` `Version:` may not exist upstream.
 As long as your `/lib/mwan3/mwan3.sh` matches one of the supported variants, one of the patches above will still apply.
 
+## Design constraints
+
+The installer is deliberately small. These constraints are what keep it that
+way, and changes should preserve them:
+
+- It patches a stock `mwan3.sh` only. A file that already contains `ipset_src`
+  is reported and left untouched.
+- It never migrates content an earlier release of this package produced. Nothing
+  in a patched file records which release wrote it, and inferring that from
+  feature markers is what shipped release 4's sticky fix as a silent no-op.
+  Remove and reinstall instead.
+- Variant detection is content-based. There is no `mwan3` version map and no
+  apk/opkg version probing; the `sha256` in the failure message is the only
+  identifier needed, and it is how the legacy patch files are named.
+- One patch file per upstream variant, source-ipset section first, with narrow
+  context so a single file covers several upstream revisions.
+
 ## Patch selection strategy (how it works)
 
 Implementation lives in `swanpan-mwan3-patch/files/usr/libexec/swanpan-mwan3-patch/postinst.sh`.

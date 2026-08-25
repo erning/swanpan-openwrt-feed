@@ -37,6 +37,18 @@ Replace the package name as needed. Container artifacts go to `OUTPUT_DIR`; manu
 
 Follow OpenWrt package conventions: uppercase package variables, tab-indented recipe commands, and `define Package/...` blocks. Shell files target `/bin/sh`; BusyBox `ash` extensions must be documented with narrow ShellCheck suppressions. Use tabs for shell block indentation, `snake_case` function names, and uppercase constants such as `STATE_DIR`. Quote expansions and fail explicitly on unsafe states.
 
+## Scope and Simplicity
+
+This is a personal feed for a known set of devices. Build the simplest thing that satisfies the actual requirement, and before adding a mechanism check whether dropping a requirement removes the need for it.
+
+Packages that modify files owned by another package (`swanpan-mwan3-patch`, `swanpan-luci-app-mwan3-patch`) follow these rules:
+
+- Modify a stock upstream file only. When the target already carries this feed's changes, report that and leave it alone.
+- Do not write migration code that upgrades one release of our own output to another. Removal restores the backup, so remove-and-reinstall is the supported way to re-apply after this feed changes.
+- Detect the target by content, not by a version map or a feature marker: apply candidates to a temporary copy and let the first clean match win.
+- Ship one patch file per upstream variant, with context trimmed to the minimum that still locates each hunk, so one file covers several upstream revisions.
+- Build the result in a temporary copy and install it with a rename, so the target is never left half-written.
+
 ## Testing Guidelines
 
 There is no coverage threshold. Run `tests/test-build-sdk-cache.sh` for cache changes. Syntax-check every changed shell file and compile affected packages in a matching SDK. For service or hotplug changes, install the APK on a test router and verify procd behavior, logs, and configuration preservation.
