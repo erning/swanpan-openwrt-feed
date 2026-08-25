@@ -65,6 +65,17 @@ the generated file with
 If `mwan3-src-ipset` is already installed, remove it before installing this
 renamed package so its removal script can restore the original mwan3 file.
 
+This package only patches a stock `mwan3.sh`. If `/lib/mwan3/mwan3.sh` is
+already patched it says so and leaves the file alone, so picking up a newer
+patch release means removing the package first:
+
+```sh
+apk del swanpan-mwan3-patch && apk add swanpan-mwan3-patch
+```
+
+Removal restores `/lib/mwan3/mwan3.sh` from the backup, so the reinstall starts
+from a pristine file. The same applies after upgrading `mwan3` itself.
+
 This package depends on `mwan3` and `patch`.
 
 ### 2) Create your ipset
@@ -117,7 +128,9 @@ This includes historical `mwan3.sh` variants (2022+) and also covers later `PKG_
 
 In practice, this means you usually only need a small number of patch files. If multiple upstream `mwan3` versions ship the same `mwan3.sh`, they will all use the same patch variant.
 
-If your device ships a different `mwan3.sh` variant, installation will fail with a message that includes the detected `mwan3` version (if available) and the `sha256` of `/lib/mwan3/mwan3.sh`.
+If your device ships a different `mwan3.sh` variant, installation will fail with
+a message carrying the `sha256` of `/lib/mwan3/mwan3.sh`, which is also how the
+legacy patch files are named.
 
 Note: patch selection runs `patch` commands during installation. The package
 depends on GNU patch; if needed, install it with `apk add patch`.
@@ -125,11 +138,11 @@ depends on GNU patch; if needed, install it with `apk add patch`.
 ## Patch variants shipped
 
 Patch selection is content-based (apply to a temporary copy), not a hardcoded
-version map. The package first selects a source-ipset patch from `patches/`,
-then selects a local-traffic patch from `patches-local/` against the staged
-result. The two directories use corresponding variants. For convenience, below
-is the tested mapping from upstream `openwrt/packages` `PKG_VERSION` (starting
-at `2.8.0`) to the first matching variant pair.
+version map. Each file under `patches/` holds two unified-diff sections against
+`lib/mwan3/mwan3.sh` — source-ipset support, then local-traffic support — which
+a single `patch` run applies in order. For convenience, below is the tested
+mapping from upstream `openwrt/packages` `PKG_VERSION` (starting at `2.8.0`) to
+the first matching variant.
 
 - `00-ipset_src.patch`: `2.10.0+`
 - `10-legacy-60b05beed3da.patch`: `2.8.0` .. `2.8.6`
@@ -146,33 +159,29 @@ Implementation lives in `swanpan-mwan3-patch/files/usr/libexec/swanpan-mwan3-pat
 
 At install time:
 
-1. If `/lib/mwan3/mwan3.sh` already carries an `ipset_src` or `ipset_src_local`
-   implementation from any earlier release, the pristine backup becomes the
-   source for this run. The shipped patches change between releases, so the file
-   is always rebuilt from the backup; no feature-marker check can tell which
-   release wrote the installed one.
-2. It iterates patches under
-   `/usr/share/swanpan-mwan3-patch/patches/*.patch` in glob order, applying each
-   candidate to a temporary copy of that source. The first source-ipset patch
-   that applies is selected.
-3. It stages that result and selects a compatible second patch from
-   `/usr/share/swanpan-mwan3-patch/patches-local/*.patch` in the same way.
+1. If `/lib/mwan3/mwan3.sh` already contains `ipset_src`, it reports that and
+   exits successfully without touching the file. Nothing in a patched file says
+   which release wrote it, so it is never re-patched in place; remove the
+   package and install it again instead.
+2. It iterates `/usr/share/swanpan-mwan3-patch/patches/*.patch` in glob order,
+   applying each candidate with `patch -p0` to a temporary copy of the installed
+   file. The first patch that applies cleanly wins, and that temporary copy is
+   the file that gets installed, so `/lib/mwan3/mwan3.sh` is never left
+   half-patched.
 
    If multiple patches would apply cleanly (rare, but possible if patches
    overlap), the first match in glob order wins. Use names such as
    `00-<name>.patch` and `10-<name>.patch` to control precedence.
 
-4. Both patches are applied inside the staging directory, so
-   `/lib/mwan3/mwan3.sh` is never left half-patched.
-5. If the staged result is byte-identical to `/lib/mwan3/mwan3.sh`, the install
-   stops there: nothing is written and mwan3 is not restarted.
-6. Otherwise it writes the pristine source to
-   `/lib/mwan3/mwan3.sh.orig.swanpan-mwan3-patch` and installs the staged file.
-7. On a live system (no `IPKG_INSTROOT`), it restarts mwan3.
+3. It copies the unpatched file to
+   `/lib/mwan3/mwan3.sh.orig.swanpan-mwan3-patch`.
+4. It writes the result beside `/lib/mwan3/mwan3.sh` and renames it over the
+   target, so an interrupted copy cannot truncate the file.
+5. On a live system (no `IPKG_INSTROOT`), it restarts mwan3.
 
-If a mwan3 upgrade replaces the target, reinstalling this package refreshes the
-backup before applying the patch again. On removal (`postrm`), it restores the
-backup file if present and restarts mwan3.
+On removal (`postrm`), it restores the backup file if present and restarts
+mwan3. After upgrading `mwan3` itself, remove and reinstall this package so the
+patch is selected against the new file.
 
 ## Adding a new patch variant
 
@@ -194,9 +203,10 @@ Recommended workflow:
   git -C ~/projects/openwrt/packages show <ref>:net/mwan3/files/lib/mwan3/mwan3.sh > mwan3.sh.target
   ```
 
-2) Create a source-ipset patch and its corresponding local-traffic patch.
+2) Create the patch.
 
-The patch should be a unified diff that targets `lib/mwan3/mwan3.sh` (relative path), e.g.:
+Each section is a unified diff that targets `lib/mwan3/mwan3.sh` (relative path),
+e.g.:
 
 ```diff
 --- lib/mwan3/mwan3.sh
@@ -204,10 +214,17 @@ The patch should be a unified diff that targets `lib/mwan3/mwan3.sh` (relative p
 @@ ...
 ```
 
-3) Put the patch files here:
+Keep the source-ipset section first and the local-traffic section second in the
+same file; `patch` applies them in order, and the second one's hunks are written
+against the output of the first.
+
+Trim leading and trailing context to the minimum that still locates each hunk.
+The shipped patches cover several upstream `mwan3.sh` revisions each precisely
+because their context is narrow.
+
+3) Put the patch file here:
 
 - `swanpan-mwan3-patch/files/usr/share/swanpan-mwan3-patch/patches/<name>.patch`
-- `swanpan-mwan3-patch/files/usr/share/swanpan-mwan3-patch/patches-local/<name>-local.patch`
 
 Naming is not semantically important for correctness because selection happens
 against a temporary copy, but it matters for readability and precedence.
@@ -227,17 +244,19 @@ If you only have a single patch file, the name is purely cosmetic.
 
 4) Test selection locally (simulated root):
 
-- Create a temp root containing `lib/mwan3/mwan3.sh` and copy both patch sets
-  into their respective directories under `usr/share/swanpan-mwan3-patch/`
+- Create a temp root containing `lib/mwan3/mwan3.sh` and copy the patches into
+  `usr/share/swanpan-mwan3-patch/patches/`
 - Run the extracted `postinst` with `IPKG_INSTROOT` set
 
-The install should print which patch pair was chosen and result in a patched
+The install should print which patch was chosen and result in a patched
 `mwan3.sh` containing both `ipset_src` and `ipset_src_local`.
+
+`tests/test-mwan3-local-source.sh` does this for every shipped variant against
+an `openwrt/packages` mirror.
 
 ## Troubleshooting
 
-- Install fails with `no compatible source-IPset patch found` or
-  `no compatible local-traffic patch found`:
+- Install fails with `no compatible patch found`:
   - Check the printed `sha256` of `/lib/mwan3/mwan3.sh`
   - Add a new patch variant as described above
 

@@ -5,10 +5,10 @@ set -eu
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
 REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd -P)
 PATCH_DIR="$REPO_ROOT/swanpan-mwan3-patch/files/usr/share/swanpan-mwan3-patch/patches"
-LOCAL_PATCH_DIR="$REPO_ROOT/swanpan-mwan3-patch/files/usr/share/swanpan-mwan3-patch/patches-local"
-BASE_PATCH_FILE="$PATCH_DIR/00-ipset_src.patch"
-LOCAL_PATCH_FILE="$LOCAL_PATCH_DIR/00-ipset_src_local.patch"
-POSTINST="$REPO_ROOT/swanpan-mwan3-patch/files/usr/libexec/swanpan-mwan3-patch/postinst.sh"
+PATCH_FILE="$PATCH_DIR/00-ipset_src.patch"
+LIBEXEC="$REPO_ROOT/swanpan-mwan3-patch/files/usr/libexec/swanpan-mwan3-patch"
+POSTINST="$LIBEXEC/postinst.sh"
+POSTRM="$LIBEXEC/postrm.sh"
 OVERLAY_ROOT="$REPO_ROOT/swanpan-luci-app-mwan3-patch/files/usr/share/swanpan-luci-app-mwan3-patch/overlays"
 MWAN3_PATH="net/mwan3/files/lib/mwan3/mwan3.sh"
 TEST_ROOT=$(mktemp -d)
@@ -18,15 +18,14 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-grep -Fq 'config_get ipset_src' "$BASE_PATCH_FILE"
-# shellcheck disable=SC2016 # Match literal shell variables in the patch.
-[ "$(grep -Fc '$ipset $ipset_src' "$BASE_PATCH_FILE")" -eq 2 ]
-
-# Every local-traffic variant must carry the same option and the same sticky
-# bypass. Release 4 shipped the bypass in the 25.12 variant only, so check all
-# of them rather than the one the 25.12 tests below exercise.
-for patch in "$LOCAL_PATCH_DIR"/*.patch; do
+# Each patch file carries the source-ipset section followed by the local-traffic
+# section, applied in that order by a single `patch` run. Both must be present
+# in every variant, and the sticky bypass must be too: release 4 shipped it in
+# the 25.12 variant only.
+for patch in "$PATCH_DIR"/*.patch; do
+	grep -Fq 'config_get ipset_src' "$patch"
 	grep -Fq 'config_get_bool ipset_src_local' "$patch"
+	[ "$(grep -c '^--- lib/mwan3/mwan3.sh$' "$patch")" -eq 2 ]
 	# shellcheck disable=SC2016 # Match literal shell variables in the patch.
 	grep -Fq '[ "$ipset_src_local" -eq 1 ] && output_policy="$policy"' "$patch"
 	# shellcheck disable=SC2016 # Match literal shell variables in the patch.
@@ -37,14 +36,16 @@ for patch in "$LOCAL_PATCH_DIR"/*.patch; do
 	[ "$(grep -c '^+.*-j \$policy' "$patch")" -eq 0 ]
 done
 
-grep -Fq 'mwan3_output_hook' "$LOCAL_PATCH_FILE"
-grep -Fq 'mwan3_rules_output' "$LOCAL_PATCH_FILE"
-[ "$(grep -Fc '! -i +' "$LOCAL_PATCH_FILE")" -eq 0 ]
-if grep -Fq 'output_src_dev' "$LOCAL_PATCH_FILE"; then
+# shellcheck disable=SC2016 # Match literal shell variables in the patch.
+[ "$(grep -Fc '$ipset $ipset_src' "$PATCH_FILE")" -eq 2 ]
+grep -Fq 'mwan3_output_hook' "$PATCH_FILE"
+grep -Fq 'mwan3_rules_output' "$PATCH_FILE"
+[ "$(grep -Fc '! -i +' "$PATCH_FILE")" -eq 0 ]
+if grep -Fq 'output_src_dev' "$PATCH_FILE"; then
 	printf '%s\n' 'output_src_dev is dead in an OUTPUT-only chain' >&2
 	exit 1
 fi
-grep -Fq 'existing swanpan patch detected' "$POSTINST"
+grep -Fq 'is already patched' "$POSTINST"
 
 for overlay in "$OVERLAY_ROOT"/*/rule.js "$OVERLAY_ROOT"/*/ruleconfig.lua; do
 	[ -f "$overlay" ] || continue
@@ -65,13 +66,17 @@ new_root() {
 	mkdir -p "$root/lib/mwan3" \
 		"$root/usr/share/swanpan-mwan3-patch" \
 		"$root/usr/libexec/swanpan-mwan3-patch"
-	cp -r "$PATCH_DIR" "$LOCAL_PATCH_DIR" "$root/usr/share/swanpan-mwan3-patch/"
-	cp "$POSTINST" "$root/usr/libexec/swanpan-mwan3-patch/postinst.sh"
-	chmod 0755 "$root/usr/libexec/swanpan-mwan3-patch/postinst.sh"
+	cp -r "$PATCH_DIR" "$root/usr/share/swanpan-mwan3-patch/"
+	cp "$POSTINST" "$POSTRM" "$root/usr/libexec/swanpan-mwan3-patch/"
+	chmod 0755 "$root/usr/libexec/swanpan-mwan3-patch/"*.sh
 }
 
 postinst() {
 	IPKG_INSTROOT="$1" "$1/usr/libexec/swanpan-mwan3-patch/postinst.sh"
+}
+
+postrm() {
+	IPKG_INSTROOT="$1" "$1/usr/libexec/swanpan-mwan3-patch/postrm.sh"
 }
 
 sha256() {
@@ -118,35 +123,34 @@ awk '
 
 expected=$(sha256 "$root/lib/mwan3/mwan3.sh")
 
-# Reinstalling the same release leaves the file alone.
-postinst "$root"
-[ "$(sha256 "$root/lib/mwan3/mwan3.sh")" = "$expected" ]
+# An already patched file is left alone and says so, whatever release wrote it.
+# Nothing may stack a second patch onto patched content.
+assert_refused() {
+	if ! postinst "$root" 2>"$TEST_ROOT/err"; then
+		printf '%s\n' 'postinst failed on an already patched file' >&2
+		exit 1
+	fi
+	grep -Fq 'is already patched' "$TEST_ROOT/err"
+}
 
-# In-place upgrade from a release whose patches produced different content. The
-# active file still carries every feature marker, so a marker-only guard would
-# skip the upgrade and ship the new release with the old behavior.
+before=$(sha256 "$root/lib/mwan3/mwan3.sh")
+assert_refused
+[ "$(sha256 "$root/lib/mwan3/mwan3.sh")" = "$before" ]
+
+# Same for content an older release produced: a stale patched file is reported,
+# never silently rewritten or half-upgraded.
 sed -i '/output_policy="\$policy"/d' "$root/lib/mwan3/mwan3.sh"
-[ "$(sha256 "$root/lib/mwan3/mwan3.sh")" != "$expected" ]
+before=$(sha256 "$root/lib/mwan3/mwan3.sh")
+assert_refused
+[ "$(sha256 "$root/lib/mwan3/mwan3.sh")" = "$before" ]
+
+# The documented way to re-patch: remove the package, then install it again.
+postrm "$root"
+cmp -s "$root/lib/mwan3/mwan3.sh" "$pristine"
+[ ! -f "$root/lib/mwan3/mwan3.sh.orig.swanpan-mwan3-patch" ]
 postinst "$root"
 [ "$(sha256 "$root/lib/mwan3/mwan3.sh")" = "$expected" ]
 cmp -s "$root/lib/mwan3/mwan3.sh.orig.swanpan-mwan3-patch" "$pristine"
-
-# In-place upgrade from release 1: the active file has only ipset_src support
-# and the package backup is still pristine upstream.
-cp "$pristine" "$root/lib/mwan3/mwan3.sh"
-patch -d "$root" -p0 < "$BASE_PATCH_FILE" >/dev/null
-postinst "$root"
-[ "$(sha256 "$root/lib/mwan3/mwan3.sh")" = "$expected" ]
-cmp -s "$root/lib/mwan3/mwan3.sh.orig.swanpan-mwan3-patch" "$pristine"
-
-# A patched file with no backup cannot be rebuilt, so installation must fail
-# instead of stacking patches onto already patched content.
-new_root nobackup
-cp "$TEST_ROOT/current/lib/mwan3/mwan3.sh" "$TEST_ROOT/nobackup/lib/mwan3/mwan3.sh"
-if postinst "$TEST_ROOT/nobackup" 2>/dev/null; then
-	printf '%s\n' 'postinst accepted a patched file with no backup' >&2
-	exit 1
-fi
 
 # Legacy variants. Each 10-legacy-<prefix>.patch is named after the sha256
 # prefix of the upstream mwan3.sh it targets, so recover those files from the
@@ -168,7 +172,10 @@ legacy_tested=0
 for patch in "$PATCH_DIR"/10-legacy-*.patch; do
 	prefix=$(basename "$patch" .patch)
 	prefix=${prefix#10-legacy-}
-	[ -f "$index/$prefix.sh" ] || continue
+	if [ ! -f "$index/$prefix.sh" ]; then
+		printf 'no upstream mwan3.sh matches %s\n' "$(basename "$patch")" >&2
+		exit 1
+	fi
 
 	new_root "legacy-$prefix"
 	root="$TEST_ROOT/legacy-$prefix"
@@ -181,12 +188,12 @@ for patch in "$PATCH_DIR"/10-legacy-*.patch; do
 	# shellcheck disable=SC2016 # Match literal shell variables in the patched file.
 	grep -Fq -- '-j ${output_policy:-$policy}' "$root/lib/mwan3/mwan3.sh"
 	[ "$(grep -Fc '! -i +' "$root/lib/mwan3/mwan3.sh")" -ge 2 ]
+
+	# Removal restores the file byte for byte.
+	postrm "$root"
+	cmp -s "$root/lib/mwan3/mwan3.sh" "$index/$prefix.sh"
+
 	legacy_tested=$((legacy_tested + 1))
 done
-
-if [ "$legacy_tested" -eq 0 ]; then
-	printf '%s\n' 'no legacy mwan3.sh variants found in the mirror' >&2
-	exit 1
-fi
 
 printf 'mwan3 local source tests passed (%d legacy variants)\n' "$legacy_tested"

@@ -28,9 +28,6 @@ define Package/swanpan-mwan3-patch/install
 	$(INSTALL_DIR) $(1)/usr/share/swanpan-mwan3-patch/patches
 	$(CP) ./files/usr/share/swanpan-mwan3-patch/patches/*.patch \
 		$(1)/usr/share/swanpan-mwan3-patch/patches/
-	$(INSTALL_DIR) $(1)/usr/share/swanpan-mwan3-patch/patches-local
-	$(CP) ./files/usr/share/swanpan-mwan3-patch/patches-local/*.patch \
-		$(1)/usr/share/swanpan-mwan3-patch/patches-local/
 
 	$(INSTALL_DIR) $(1)/usr/libexec/swanpan-mwan3-patch
 	$(INSTALL_BIN) ./files/usr/libexec/swanpan-mwan3-patch/postinst.sh \

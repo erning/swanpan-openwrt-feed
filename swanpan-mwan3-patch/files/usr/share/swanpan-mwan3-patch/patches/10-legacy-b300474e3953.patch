@@ -54,3 +54,80 @@
  			     ${src_port:+-m} ${src_port:+multiport} ${src_port:+--sports} $src_port \
  			     ${dest_port:+-m} ${dest_port:+multiport} ${dest_port:+--dports} $dest_port \
  			     -m mark --mark 0/$MMX_MASK \
+--- lib/mwan3/mwan3.sh
++++ lib/mwan3/mwan3.sh
+@@ -881,7 +881,8 @@
+ 
+ mwan3_set_user_iptables_rule()
+ {
+-	local ipset ipset_src family proto policy src_ip src_port src_iface src_dev
++	local ipset ipset_src ipset_src_local output_policy
++	local family proto policy src_ip src_port src_iface src_dev
+ 	local sticky dest_ip dest_port use_policy timeout rule policy IPT
+ 	local global_logging rule_logging loglevel
+ 
+@@ -891,6 +892,7 @@
+ 	config_get timeout $1 timeout 600
+ 	config_get ipset $1 ipset
+ 	config_get ipset_src $1 ipset_src
++	config_get_bool ipset_src_local $1 ipset_src_local 0
+ 	config_get proto $1 proto all
+ 	config_get src_ip $1 src_ip
+ 	config_get src_iface $1 src_iface
+@@ -904,7 +906,10 @@
+ 	[ -z "$dest_ip" ] && unset dest_ip
+ 	[ -z "$src_ip" ] && unset src_ip
+ 	[ -z "$ipset" ] && unset ipset
+-	[ -z "$ipset_src" ] && unset ipset_src
++	if [ -z "$ipset_src" ]; then
++		unset ipset_src
++		ipset_src_local=0
++	fi
+ 	[ -z "$src_port" ]  && unset src_port
+ 	[ -z "$dest_port" ]  && unset dest_port
+ 	[ "$proto"  != 'tcp' ]  && [ "$proto" != 'udp' ] && {
+@@ -982,6 +987,11 @@
+ 						-j SET --add-set mwan3_sticky_$rule src,src
+ 				done
+ 
++				# Router-originated traffic all shares the router's own
++				# source address, so the sticky ipset cannot tell those
++				# connections apart. Keep the local copy of the rule on
++				# the plain policy chain.
++				[ "$ipset_src_local" -eq 1 ] && output_policy="$policy"
+ 				policy="mwan3_rule_$1"
+ 			else
+ 				policy="mwan3_policy_$use_policy"
+@@ -997,6 +1007,32 @@
+ 		for IPT in "$IPT4" "$IPT6"; do
+ 			[ "$family" == "ipv4" ] && [ "$IPT" == "$IPT6" ] && continue
+ 			[ "$family" == "ipv6" ] && [ "$IPT" == "$IPT4" ] && continue
++			[ "$ipset_src_local" -eq 1 ] && {
++				[ "$global_logging" = "1" ] && [ "$rule_logging" = "1" ] && {
++					$IPT -A mwan3_rules \
++					     ! -i + \
++					     -p $proto \
++					     ${src_ip:+-s} $src_ip \
++					     ${dest_ip:+-d} $dest_ip \
++					     $ipset \
++					     ${src_port:+-m} ${src_port:+multiport} ${src_port:+--sports} $src_port \
++					     ${dest_port:+-m} ${dest_port:+multiport} ${dest_port:+--dports} $dest_port \
++					     -m mark --mark 0/$MMX_MASK \
++					     -m comment --comment "$1" \
++					     -j LOG --log-level "$loglevel" --log-prefix "MWAN3($1)" &> /dev/null
++				}
++
++				$IPT -A mwan3_rules \
++				     ! -i + \
++				     -p $proto \
++				     ${src_ip:+-s} $src_ip \
++				     ${dest_ip:+-d} $dest_ip \
++				     $ipset \
++				     ${src_port:+-m} ${src_port:+multiport} ${src_port:+--sports} $src_port \
++				     ${dest_port:+-m} ${dest_port:+multiport} ${dest_port:+--dports} $dest_port \
++				     -m mark --mark 0/$MMX_MASK \
++				     -j ${output_policy:-$policy} &> /dev/null
++			}
+ 			[ "$global_logging" = "1" ] && [ "$rule_logging" = "1" ] && {
+ 				$IPT -A mwan3_rules \
+ 				     -p $proto \
