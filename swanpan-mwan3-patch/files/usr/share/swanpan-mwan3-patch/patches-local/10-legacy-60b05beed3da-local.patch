@@ -1,15 +1,16 @@
 --- lib/mwan3/mwan3.sh
 +++ lib/mwan3/mwan3.sh
-@@ -862,7 +862,7 @@
+@@ -862,7 +862,8 @@
  
  mwan3_set_user_iptables_rule()
  {
 -	local ipset ipset_src family proto policy src_ip src_port sticky dest_ip
-+	local ipset ipset_src ipset_src_local family proto policy src_ip src_port sticky dest_ip
++	local ipset ipset_src ipset_src_local output_policy
++	local family proto policy src_ip src_port sticky dest_ip
  	local dest_port use_policy timeout rule policy IPT
  	local global_logging rule_logging loglevel
  
-@@ -872,6 +872,7 @@
+@@ -872,6 +873,7 @@
  	config_get timeout $1 timeout 600
  	config_get ipset $1 ipset
  	config_get ipset_src $1 ipset_src
@@ -17,7 +18,7 @@
  	config_get proto $1 proto all
  	config_get src_ip $1 src_ip 0.0.0.0/0
  	config_get src_port $1 src_port 0:65535
-@@ -880,6 +881,8 @@
+@@ -880,6 +882,8 @@
  	config_get use_policy $1 use_policy
  	config_get family $1 family any
  
@@ -26,7 +27,19 @@
  	config_get rule_logging $1 logging 0
  	config_get global_logging globals logging 0
  	config_get loglevel globals loglevel notice
-@@ -956,10 +959,63 @@
+@@ -944,6 +948,11 @@
+ 						-j SET --add-set mwan3_sticky_$rule src,src
+ 				done
+ 
++				# Router-originated traffic all shares the router's own
++				# source address, so the sticky ipset cannot tell those
++				# connections apart. Keep the local copy of the rule on
++				# the plain policy chain.
++				[ "$ipset_src_local" -eq 1 ] && output_policy="$policy"
+ 				policy="mwan3_rule_$1"
+ 			else
+ 				policy="mwan3_policy_$use_policy"
+@@ -956,10 +965,63 @@
  
  			fi
  		fi
@@ -58,7 +71,7 @@
 +						-m multiport --dports $dest_port \
 +						-m mark --mark 0/$MMX_MASK \
 +						-m comment --comment "$rule" \
-+						-j $policy &> /dev/null
++						-j ${output_policy:-$policy} &> /dev/null
 +					;;
 +				*)
 +					[ "$global_logging" = "1" ] && [ "$rule_logging" = "1" ] && {
@@ -78,7 +91,7 @@
 +						-d $dest_ip $ipset \
 +						-m mark --mark 0/$MMX_MASK \
 +						-m comment --comment "$rule" \
-+						-j $policy &> /dev/null
++						-j ${output_policy:-$policy} &> /dev/null
 +					;;
 +			esac
 +		}
@@ -90,7 +103,7 @@
  				case $proto in
  					tcp|udp)
  					[ "$global_logging" = "1" ] && [ "$rule_logging" = "1" ] && {
-@@ -1005,6 +1061,7 @@
+@@ -1005,6 +1067,7 @@
  			done
  
  		elif [ "$family" == "ipv4" ]; then
@@ -98,7 +111,7 @@
  
  			case $proto in
  				tcp|udp)
-@@ -1050,6 +1107,7 @@
+@@ -1050,6 +1113,7 @@
  			esac
  
  		elif [ "$family" == "ipv6" ]; then

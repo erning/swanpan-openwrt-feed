@@ -91,32 +91,30 @@ if [ ! -f "${dst}" ]; then
 	exit 0
 fi
 
-if grep -q "\bmwan3_rules_output\b" "${dst}" &&
-	grep -q "\bipset_src_local\b" "${dst}"; then
-	exit 0
-fi
-
-# Release 1 patched this file in place and left the pristine upstream file in
-# ${backup}. Restore that copy before selecting the two release 2 patches.
-# Package managers do not consistently run the old postrm during an in-place
-# upgrade, so handle both upgrade paths here.
-if grep -q "\bipset_src\b" "${dst}"; then
-	[ -f "${backup}" ] || die "legacy ipset_src patch detected but ${backup} is missing"
-	cp -fp "${backup}" "${dst}" || die "failed to restore ${dst} before upgrade"
-fi
-
 command -v patch >/dev/null 2>&1 || die "patch command not found (install package 'patch')"
 
-if select_patch "${dst}" "${patch_dir}"; then
+# An earlier release of this package may have patched ${dst} in place, and the
+# patches shipped here are not necessarily the ones it applied. Rebuild from the
+# pristine backup instead of trusting feature markers, so an in-place upgrade
+# always ends up with the current patch set. Package managers do not
+# consistently run the old postrm during an upgrade, so handle both upgrade
+# paths here.
+source="${dst}"
+if grep -q "\bipset_src\b" "${dst}" || grep -q "\bipset_src_local\b" "${dst}"; then
+	[ -f "${backup}" ] || die "existing swanpan patch detected but ${backup} is missing"
+	source="${backup}"
+fi
+
+if select_patch "${source}" "${patch_dir}"; then
 	chosen_base_patch="${selected_patch}"
 else
 	sha256=""
 	if command -v sha256sum >/dev/null 2>&1; then
-		sha256="$(sha256sum "${dst}" | awk '{print $1}')"
+		sha256="$(sha256sum "${source}" | awk '{print $1}')"
 	elif command -v shasum >/dev/null 2>&1; then
-		sha256="$(shasum -a 256 "${dst}" | awk '{print $1}')"
+		sha256="$(shasum -a 256 "${source}" | awk '{print $1}')"
 	elif command -v openssl >/dev/null 2>&1; then
-		sha256="$(openssl dgst -sha256 "${dst}" | awk '{print $NF}')"
+		sha256="$(openssl dgst -sha256 "${source}" | awk '{print $NF}')"
 	fi
 
 	die "no compatible source-IPset patch found (mwan3_version=${mwan3_version:-unknown} sha256=${sha256:-unknown})"
@@ -124,36 +122,52 @@ fi
 
 stagedir="$(new_temp_dir)"
 [ -n "${stagedir}" ] || die "failed to create staging directory"
+staged="${stagedir}/lib/mwan3/mwan3.sh"
+# Kept beside ${dst} so the final install is a same-filesystem rename. Nothing
+# in mwan3 globs /lib/mwan3; every file there is sourced by explicit path.
+tmp_dst="${dst}.new.${pkg}"
+
+stage_die() {
+	rm -rf "${stagedir}" >/dev/null 2>&1 || true
+	rm -f "${tmp_dst}" >/dev/null 2>&1 || true
+	die "$*"
+}
+
 mkdir -p "${stagedir}/lib/mwan3"
-cp -fp "${dst}" "${stagedir}/lib/mwan3/mwan3.sh"
+cp -fp "${source}" "${staged}" || stage_die "failed to stage ${source}"
 
 if ! apply_patch_in_dir "${stagedir}" "${chosen_base_patch}"; then
-	rm -rf "${stagedir}" >/dev/null 2>&1 || true
-	die "failed to stage patch $(basename "${chosen_base_patch}")"
+	stage_die "failed to stage patch $(basename "${chosen_base_patch}")"
 fi
 
-if select_patch "${stagedir}/lib/mwan3/mwan3.sh" "${local_patch_dir}"; then
+if select_patch "${staged}" "${local_patch_dir}"; then
 	chosen_local_patch="${selected_patch}"
 else
-	rm -rf "${stagedir}" >/dev/null 2>&1 || true
-	die "no compatible local-traffic patch found under ${local_patch_dir}"
+	stage_die "no compatible local-traffic patch found under ${local_patch_dir}"
 fi
 
-rm -rf "${stagedir}" >/dev/null 2>&1 || true
+if ! apply_patch_in_dir "${stagedir}" "${chosen_local_patch}"; then
+	stage_die "failed to stage patch $(basename "${chosen_local_patch}")"
+fi
+
+# Nothing to install when ${dst} already matches what these patches produce.
+# Targets without cmp fall through and rewrite the file with identical content.
+if cmp -s "${staged}" "${dst}" 2>/dev/null; then
+	rm -rf "${stagedir}" >/dev/null 2>&1 || true
+	exit 0
+fi
 
 echo "${pkg}: applying $(basename "${chosen_base_patch}") and $(basename "${chosen_local_patch}") for mwan3_version=${mwan3_version:-unknown}" >&2
 
-cp -fp "${dst}" "${backup}" || die "failed to back up ${dst}"
-
-if ! apply_patch_in_dir "${root}" "${chosen_base_patch}"; then
-	[ -f "${backup}" ] && cp -fp "${backup}" "${dst}" || true
-	die "failed to apply patch $(basename "${chosen_base_patch}")"
+if [ "${source}" != "${backup}" ]; then
+	cp -fp "${source}" "${backup}" || stage_die "failed to back up ${dst}"
 fi
 
-if ! apply_patch_in_dir "${root}" "${chosen_local_patch}"; then
-	[ -f "${backup}" ] && cp -fp "${backup}" "${dst}" || true
-	die "failed to apply patch $(basename "${chosen_local_patch}")"
-fi
+# Write beside ${dst} and rename over it, so a failure part-way through the copy
+# cannot leave a truncated mwan3.sh behind.
+cp -fp "${staged}" "${tmp_dst}" || stage_die "failed to write ${tmp_dst}"
+mv -f "${tmp_dst}" "${dst}" || stage_die "failed to install patched ${dst}"
+rm -rf "${stagedir}" >/dev/null 2>&1 || true
 
 if [ -z "${IPKG_INSTROOT:-}" ] && [ -x /etc/init.d/mwan3 ]; then
 	/etc/init.d/mwan3 restart >/dev/null 2>&1 || true

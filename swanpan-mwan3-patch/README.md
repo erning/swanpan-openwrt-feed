@@ -32,11 +32,21 @@ retains the rule's protocol, source/destination address, destination ipset, port
 mark, and policy conditions. The option has no effect unless `ipset_src` is also
 configured.
 
+Which rules get a router-originated copy differs between the patch variants. The
+25.12 variant copies every rule into `mwan3_rules_output` except one bound to
+`src_iface` without `ipset_src_local`: that chain is reached from `OUTPUT`, where
+a packet has no ingress device, so an `-i` match could never hit. The legacy
+variants instead prepend a `! -i +` copy of the rule to `mwan3_rules`, and only
+for rules that set `ipset_src_local`; every other rule keeps upstream's handling
+of router-originated traffic.
+
 When `ipset_src_local` and `sticky` are both enabled, sticky selection applies
 only to forwarded traffic. Router-originated traffic jumps directly to the
-configured policy so a shared router source address cannot pin local connections
-to a sticky member. Conntrack marks still keep each established connection on
-one interface.
+configured policy chain, so a shared router source address cannot pin local
+connections to a sticky member; conntrack marks still keep each established
+connection on one interface. Every shipped patch variant implements this,
+including the legacy ones. Rules that leave `ipset_src_local` unset keep
+upstream behavior and stay on the sticky chain.
 
 ## Usage
 
@@ -136,26 +146,28 @@ Implementation lives in `swanpan-mwan3-patch/files/usr/libexec/swanpan-mwan3-pat
 
 At install time:
 
-1. If `/lib/mwan3/mwan3.sh` already contains both `ipset_src_local` and
-   `mwan3_rules_output`, it exits successfully (idempotent).
-2. If it detects an earlier `ipset_src` or `ipset_src_local` implementation, it
-   restores the pristine backup before continuing.
-3. It iterates patches under
+1. If `/lib/mwan3/mwan3.sh` already carries an `ipset_src` or `ipset_src_local`
+   implementation from any earlier release, the pristine backup becomes the
+   source for this run. The shipped patches change between releases, so the file
+   is always rebuilt from the backup; no feature-marker check can tell which
+   release wrote the installed one.
+2. It iterates patches under
    `/usr/share/swanpan-mwan3-patch/patches/*.patch` in glob order, applying each
-   candidate to a temporary copy. The first source-ipset patch that applies is
-   selected.
-4. It stages that result and selects a compatible second patch from
+   candidate to a temporary copy of that source. The first source-ipset patch
+   that applies is selected.
+3. It stages that result and selects a compatible second patch from
    `/usr/share/swanpan-mwan3-patch/patches-local/*.patch` in the same way.
 
    If multiple patches would apply cleanly (rare, but possible if patches
    overlap), the first match in glob order wins. Use names such as
    `00-<name>.patch` and `10-<name>.patch` to control precedence.
 
-5. It backs up the current unpatched file:
-
-   - `/lib/mwan3/mwan3.sh.orig.swanpan-mwan3-patch`
-
-6. It applies both selected patches. If either fails, it restores the backup.
+4. Both patches are applied inside the staging directory, so
+   `/lib/mwan3/mwan3.sh` is never left half-patched.
+5. If the staged result is byte-identical to `/lib/mwan3/mwan3.sh`, the install
+   stops there: nothing is written and mwan3 is not restarted.
+6. Otherwise it writes the pristine source to
+   `/lib/mwan3/mwan3.sh.orig.swanpan-mwan3-patch` and installs the staged file.
 7. On a live system (no `IPKG_INSTROOT`), it restarts mwan3.
 
 If a mwan3 upgrade replaces the target, reinstalling this package refreshes the
@@ -205,6 +217,11 @@ Use something recognizable:
 - `00-mwan3-2.12.0.patch`
 - `10-openwrt-25.12-<date>.patch`
 - `20-variant-<sha256-prefix>.patch`
+
+The shipped `10-legacy-<prefix>.patch` names use the first 12 hex characters of
+the target `mwan3.sh` sha256. `tests/test-mwan3-local-source.sh` relies on that:
+it recovers each of those files from the upstream mirror and runs the full
+install against it, so keep the convention for new legacy variants.
 
 If you only have a single patch file, the name is purely cosmetic.
 
