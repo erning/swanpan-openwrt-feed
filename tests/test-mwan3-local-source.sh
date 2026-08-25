@@ -139,7 +139,9 @@ assert_refused
 
 # Same for content an older release produced: a stale patched file is reported,
 # never silently rewritten or half-upgraded.
-sed -i '/output_policy="\$policy"/d' "$root/lib/mwan3/mwan3.sh"
+# shellcheck disable=SC2016 # Match literal shell variables in the patched file.
+sed '/output_policy="\$policy"/d' "$root/lib/mwan3/mwan3.sh" > "$TEST_ROOT/stale.sh"
+mv "$TEST_ROOT/stale.sh" "$root/lib/mwan3/mwan3.sh"
 before=$(sha256 "$root/lib/mwan3/mwan3.sh")
 assert_refused
 [ "$(sha256 "$root/lib/mwan3/mwan3.sh")" = "$before" ]
@@ -157,7 +159,7 @@ cmp -s "$root/lib/mwan3/mwan3.sh.orig.swanpan-mwan3-patch" "$pristine"
 # mirror and run the whole install against them.
 index="$TEST_ROOT/variants"
 mkdir -p "$index"
-for branch in openwrt-22.03 openwrt-23.05 openwrt-24.10 openwrt-25.12 master; do
+for branch in openwrt-21.02 openwrt-22.03 openwrt-23.05 openwrt-24.10 openwrt-25.12 master; do
 	git --git-dir="$mirror" log --format='%x00' --raw --no-abbrev \
 		"$branch" -- "$MWAN3_PATH" 2>/dev/null | awk '/^:/ { print $4 }'
 done | sort -u > "$TEST_ROOT/blobs"
@@ -167,6 +169,27 @@ while read -r blob; do
 	prefix=$(sha256sum "$TEST_ROOT/blob.sh" | cut -c1-12)
 	[ -f "$index/$prefix.sh" ] || cp "$TEST_ROOT/blob.sh" "$index/$prefix.sh"
 done < "$TEST_ROOT/blobs"
+
+# OpenWrt 21.02 release candidates shipped an earlier 2.10.x mwan3.sh which
+# differs from the branch head outside the patched rule function. The same
+# patch variant must cover both upstream contents.
+prefix=a1979f37b17e
+if [ ! -f "$index/$prefix.sh" ]; then
+	printf 'no upstream mwan3.sh matches OpenWrt 21.02 release candidate %s\n' "$prefix" >&2
+	exit 1
+fi
+
+new_root "openwrt-21.02-$prefix"
+root="$TEST_ROOT/openwrt-21.02-$prefix"
+cp "$index/$prefix.sh" "$root/lib/mwan3/mwan3.sh"
+postinst "$root"
+sh -n "$root/lib/mwan3/mwan3.sh"
+grep -Fq 'config_get_bool ipset_src_local' "$root/lib/mwan3/mwan3.sh"
+# shellcheck disable=SC2016 # Match literal shell variables in the patched file.
+grep -Fq '[ "$ipset_src_local" -eq 1 ] && output_policy="$policy"' "$root/lib/mwan3/mwan3.sh"
+[ "$(grep -Fc '! -i +' "$root/lib/mwan3/mwan3.sh")" -ge 2 ]
+postrm "$root"
+cmp -s "$root/lib/mwan3/mwan3.sh" "$index/$prefix.sh"
 
 legacy_tested=0
 for patch in "$PATCH_DIR"/10-legacy-*.patch; do

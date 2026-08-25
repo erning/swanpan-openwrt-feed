@@ -116,8 +116,9 @@ Instead, it selects a patch based on whether it can be applied cleanly to the in
 
 Important: patch filenames are NOT semantic. For example, `00-ipset_src.patch` is just the current patch variant name; it is not limited to any specific `mwan3` version.
 
-As of 2026-01-15, the patch set was validated against `openwrt/packages` branches starting from `openwrt-22.03`:
+As of 2026-08-25, the patch set was validated against `openwrt/packages` branches starting from `openwrt-21.02`:
 
+- `origin/openwrt-21.02`
 - `origin/openwrt-22.03`
 - `origin/openwrt-23.05`
 - `origin/openwrt-24.10`
@@ -144,7 +145,8 @@ a single `patch` run applies in order. For convenience, below is the tested
 mapping from upstream `openwrt/packages` `PKG_VERSION` (starting at `2.8.0`) to
 the first matching variant.
 
-- `00-ipset_src.patch`: `2.10.0+`
+- `00-ipset_src.patch`: `2.11.0+`
+- `10-legacy-5cf615912c17.patch`: `2.10.0` .. `2.10.13`
 - `10-legacy-60b05beed3da.patch`: `2.8.0` .. `2.8.6`
 - `10-legacy-b300474e3953.patch`: `2.8.7` .. `2.8.8`
 - `10-legacy-50c29cbe5312.patch`: `2.8.9` .. `2.8.12`
