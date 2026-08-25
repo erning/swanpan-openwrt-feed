@@ -1,6 +1,6 @@
 --- www/luci-static/resources/view/mwan3/network/rule.js
 +++ www/luci-static/resources/view/mwan3/network/rule.js
-@@ -105,6 +105,16 @@
+@@ -105,6 +105,22 @@
  		o.depends('sticky', '1');
  
 +		o = s.option(form.Value, 'ipset_src', _('IPset source'),

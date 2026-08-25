@@ -3,7 +3,10 @@
 `swanpan-luci-app-mwan3-patch` is an overlay package that adds the LuCI rule
 options `ipset_src` and `ipset_src_local` to `luci-app-mwan3`.
 
-It replaces the installed LuCI JS view on-device at install time (no need to rebuild `luci-app-mwan3`).
+It replaces the installed LuCI view on-device at install time, without rebuilding
+`luci-app-mwan3`. This is necessary for modern releases because OpenWrt installs
+a `jsmin`-processed `rule.js`, so a source patch cannot be applied reliably on
+the router.
 
 ## What it adds
 
@@ -24,7 +27,7 @@ This overlay package exposes both fields in the LuCI rules UI.
   - `applications/luci-app-mwan3/luasrc/model/cbi/mwan/ruleconfig.lua`
 - Installed files on device (replaced):
   - `/www/luci-static/resources/view/mwan3/network/rule.js`
-  - `/www/luci-static/resources/view/mwan3/network/rule.js.gz` (kept in sync when `gzip` exists)
+  - `/www/luci-static/resources/view/mwan3/network/rule.js.gz` (kept in sync when present)
 
 Legacy LuCI (Lua CBI) installed file (replaced):
 
@@ -98,50 +101,76 @@ This package ships multiple pre-generated overlays under:
 
 - `/usr/share/swanpan-luci-app-mwan3-patch/overlays/<version>/rule.js` (modern JS LuCI)
 - `/usr/share/swanpan-luci-app-mwan3-patch/overlays/<version>/ruleconfig.lua` (legacy Lua CBI LuCI)
+- `/usr/share/swanpan-luci-app-mwan3-patch/overlays/<version>/stock.sha256` (accepted upstream fingerprints)
 
-It reads the installed `luci-app-mwan3` version from APK, with an opkg fallback
-for older systems. It then selects the newest compatible overlay whose LuCI era
-is not newer than the installed package.
+The directory name identifies the upstream target-file revision for maintainers;
+it is not used as a runtime version range. LuCI package versions can advance due
+to unrelated changes while a release branch keeps an older `rule.js`, so version
+ordering cannot select an overlay safely.
 
-Example:
+The installer instead hashes the installed target and requires an exact match in
+one `stock.sha256`. For modern JS, the manifest contains fingerprints for both
+the upstream source and the output produced by that LuCI revision's `jsmin`.
+This supports official minified packages as well as unminified development
+builds without accepting unknown content.
 
-- Installed: `26.052.56300~90d5914-r1`
-- Selected overlay: `26.052.56300~90d5914`
+The checked-in fingerprints and overlays are tested against every available
+OpenWrt 21.02, 22.03, 23.05, 24.10, and 25.12 release and release-candidate tag
+in the local OpenWrt mirrors.
 
 At install time it:
 
-1. Backs up the original file(s):
-   - `/www/luci-static/resources/view/mwan3/network/rule.js.orig.swanpan-luci-app-mwan3-patch`
-   - `/www/luci-static/resources/view/mwan3/network/rule.js.gz.orig.swanpan-luci-app-mwan3-patch` (if present)
-2. Copies the selected overlay file into the correct LuCI target:
-   - modern JS: `/www/.../rule.js`
-   - legacy Lua CBI: `/usr/lib/lua/.../ruleconfig.lua`
-3. For modern JS LuCI only: rebuilds `/www/.../rule.js.gz` from the new content when `gzip` exists and the `.gz` file is present
+1. Verifies that an existing `rule.js.gz` decompresses to the installed
+   `rule.js`. If not, installation stops without changing either file.
+2. Checks whether any shipped overlay is already installed. If so, it reports
+   that state and leaves both the target and its backup unchanged.
+3. Matches the exact SHA-256 of a known stock target. Unknown or locally modified
+   content is left untouched and installation fails.
+4. Stages the overlay, backup, and any gzip counterpart before installing each
+   completed file with a rename.
 
-Important: reinstalling or upgrading `luci-app-mwan3` may overwrite `/www/.../rule.js` again. In that case, reinstall this overlay package to re-apply.
-The installer refreshes its backup when it detects an unpatched upstream file,
-so later removal restores the current upstream version.
+The backup paths are:
+
+- `/www/luci-static/resources/view/mwan3/network/rule.js.orig.swanpan-luci-app-mwan3-patch`
+- `/www/luci-static/resources/view/mwan3/network/rule.js.gz.orig.swanpan-luci-app-mwan3-patch` (if present)
+
+The legacy backup is
+`/usr/lib/lua/luci/model/cbi/mwan/ruleconfig.lua.orig.swanpan-luci-app-mwan3-patch`.
+If `rule.js.gz` exists, `gzip` is required and a synchronized compressed overlay
+is installed. If it does not exist, the package does not create one.
+
+Important: reinstalling or upgrading `luci-app-mwan3` may overwrite
+`/www/.../rule.js` again. In that case, reinstall this overlay package to
+re-apply.
+The installer refreshes its backup only after the new target matches a known
+stock fingerprint, so later removal restores the current upstream version.
+
+The package deliberately does not migrate an overlay written by an older release
+of itself. Remove and reinstall it when this feed changes an overlay; removal
+restores stock content before the new package applies.
 
 On removal (`postrm`), it restores the backup file(s) if present.
 
 ## Adding support for a new upstream version
 
-You need a new overlay when the upstream `rule.js` changes.
+You need a new overlay and stock fingerprint whenever the upstream target file
+changes.
 
 Recommended workflow:
 
-1) Identify the installed `luci-app-mwan3` version on the target device:
+1. Identify the LuCI Git ref pinned by the OpenWrt release. An installed package
+   version containing a seven-character commit hash can also be used:
 
 ```sh
 apk list --installed luci-app-mwan3
 ```
 
-2) Generate a corresponding overlay under:
+2. Generate the corresponding overlay and `stock.sha256` under:
 
 - `swanpan-luci-app-mwan3-patch/files/usr/share/swanpan-luci-app-mwan3-patch/overlays/<base-version>/rule.js`
 
-The directory name is the LuCI version that introduced that overlay content,
-without the trailing package release.
+The directory name is derived from the commit that last changed the target file,
+not from the whole LuCI feed's HEAD.
 
 ### Generate an overlay from the local LuCI mirror
 
@@ -163,7 +192,11 @@ Generate overlays with:
 swanpan-luci-app-mwan3-patch/tools/gen-overlay.sh openwrt-25.12
 ```
 
-The generator auto-detects whether the target LuCI version uses modern JS (`rule.js`) or legacy Lua CBI (`ruleconfig.lua`) and writes the correct overlay filename into the version directory.
+The generator auto-detects whether the target LuCI version uses modern JS
+(`rule.js`) or legacy Lua CBI (`ruleconfig.lua`). It applies the first clean
+patch variant, reuses a byte-identical overlay when possible, and records the
+stock source fingerprint. For JS it also builds that revision's `jsmin` and
+records the fingerprint of the installed minified form.
 
 ### Generate an overlay for a specific installed luci-app-mwan3 version
 
@@ -179,15 +212,23 @@ You can pass that value directly:
 swanpan-luci-app-mwan3-patch/tools/gen-overlay.sh 26.052.56300~90d5914-r1
 ```
 
-The script will extract the embedded commit hash and regenerate the matching overlay directory.
+The script will extract the embedded commit hash and regenerate the matching
+overlay directory.
 
 ## Troubleshooting
 
 - Install fails with `target file not found`:
   - Ensure `luci-app-mwan3` is installed and provides `/www/luci-static/resources/view/mwan3/network/rule.js`
 
-- Install fails with `no overlay found`:
-  - Check the device `luci-app-mwan3` version and generate a matching overlay directory
+- Install fails with `unsupported or modified rule.js` (or `ruleconfig.lua`):
+  - Compare the reported SHA-256 with the checked-in `stock.sha256` files
+  - If it is a new stock upstream variant, run `tools/gen-overlay.sh` for the
+    pinned LuCI ref and test it before rebuilding the package
+  - If it is locally modified, restore the stock `luci-app-mwan3` file first
+
+- Install fails because `rule.js.gz` does not contain `rule.js`:
+  - Reinstall `luci-app-mwan3` so its plain and compressed assets agree, then
+    install this package again
 
 - The added fields are not shown:
   - Ensure the overlay package is installed: `apk info swanpan-luci-app-mwan3-patch`

@@ -4,13 +4,10 @@
 set -eu
 
 pkg="swanpan-luci-app-mwan3-patch"
-
 root="${IPKG_INSTROOT:-}"
 
 dst_js="${root}/www/luci-static/resources/view/mwan3/network/rule.js"
 dst_lua="${root}/usr/lib/lua/luci/model/cbi/mwan/ruleconfig.lua"
-
-status_file="${root}/usr/lib/opkg/status"
 overlay_root="${root}/usr/share/${pkg}/overlays"
 
 die() {
@@ -18,103 +15,53 @@ die() {
 	exit 1
 }
 
-get_installed_version() {
-	local v=""
-
-	# OpenWrt 24.10+ uses apk; the installed db is in ADB binary format,
-	# so read it via the apk command rather than awking the file. `apk list
-	# --installed` prints "<pkg>-<ver> <arch> ... [installed]" — anchor on
-	# "<pkg>-" so we don't match the description line emitted by `apk info`.
-	if [ -z "${IPKG_INSTROOT:-}" ] && command -v apk >/dev/null 2>&1; then
-		v="$(apk list --installed luci-app-mwan3 2>/dev/null | \
-			awk 'index($0, "luci-app-mwan3-") == 1 { s=$1; sub("^luci-app-mwan3-","",s); print s; exit }')"
-	fi
-
-	if [ -z "${v}" ] && [ -f "${status_file}" ]; then
-		v="$(awk 'BEGIN{p=0} $0=="Package: luci-app-mwan3"{p=1} p && $1=="Version:"{print $2; exit}' "${status_file}" 2>/dev/null || true)"
-	fi
-
-	if [ -z "${v}" ] && [ -z "${IPKG_INSTROOT:-}" ] && command -v opkg >/dev/null 2>&1; then
-		v="$(opkg status luci-app-mwan3 2>/dev/null | awk '$1=="Version:"{print $2; exit}')"
-	fi
-
-	echo "${v}"
+sha256_file() {
+	sha256sum "$1" | awk '{print $1}'
 }
 
-# Convert a version-like string ("YY.JJJ.SSSSS~hash" or "git-YY.JJJ.SSSSS-hash")
-# to an integer score (YY*1000 + JJJ). Empty if the string isn't shaped that way.
-era_score() {
-	local s="$1"
-	s="${s#git-}"
-	printf '%s' "$s" | awk -F. '
-		NF >= 2 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ {
-			printf "%d", ($1 * 1000) + $2
-		}'
+verify_gzip_peer() {
+	[ -n "${dst_gz:-}" ] || return 0
+	[ -f "${dst_gz}" ] || return 0
+	command -v gzip >/dev/null 2>&1 || \
+		die "cannot verify ${dst_gz}: gzip not found"
+	gzip -t "${dst_gz}" 2>/dev/null || die "invalid gzip file: ${dst_gz}"
+	if ! gzip -dc "${dst_gz}" 2>/dev/null | cmp -s - "${dst}"; then
+		die "refusing to modify mismatched files: ${dst_gz} does not contain ${dst}"
+	fi
 }
 
-pick_overlay() {
-	# Each overlay is keyed by the version that *introduced* its rule.js
-	# content. Versions where rule.js didn't change reuse the predecessor.
-	# Find the overlay with the highest era_score that is still <= the
-	# device's era_score. If we couldn't compute the device's score (apk
-	# Version was empty/odd), fall back to the latest known overlay.
-	local v="$1"
-	local want="$2"
-	local dev_score
-	local d name s
-	local best="" best_score=-1 best_tested=""
-
-	dev_score="$(era_score "${v}")"
+find_applied_overlay() {
+	local d
 
 	for d in "${overlay_root}"/*/; do
 		[ -d "${d}" ] || continue
 		[ -f "${d}${want}" ] || continue
-		name="$(basename "${d}")"
-		s="$(era_score "${name}")"
-		[ -n "${s}" ] || continue
-		if [ -n "${dev_score}" ] && [ "${s}" -gt "${dev_score}" ]; then
-			continue
-		fi
-		if [ "${s}" -gt "${best_score}" ]; then
-			best_score="${s}"
-			best="${d}${want}"
-			best_tested=""
-			if [ -f "${d}tested_up_to" ]; then
-				best_tested="$(awk '$1 ~ /^[0-9]+$/ {print $1; exit}' "${d}tested_up_to")"
-			fi
+		if cmp -s "${d}${want}" "${dst}"; then
+			printf '%s\n' "${d}${want}"
+			return 0
 		fi
 	done
 
-	[ -z "${best}" ] && return 1
-
-	# tested_up_to records the highest era we've verified rule.js content
-	# is unchanged at. If the device is past that, the upstream may have
-	# shipped a new rule.js variant we haven't tested yet — apply the
-	# best-known overlay anyway, but loudly tell the maintainer to refresh.
-	if [ -n "${dev_score}" ] && [ -n "${best_tested}" ] && [ "${dev_score}" -gt "${best_tested}" ]; then
-		echo "${pkg}: warning: overlay $(basename "$(dirname "${best}")") tested_up_to=${best_tested}, device era=${dev_score}" >&2
-		echo "${pkg}: warning: rule.js may have changed upstream — re-run tools/gen-overlay.sh against the latest luci ref" >&2
-	fi
-
-	printf '%s\n' "${best}"
-	return 0
+	return 1
 }
 
-regen_gz() {
-	[ -n "${dst_gz:-}" ] || return 0
-	[ -f "${dst_gz}" ] || return 0
-	command -v gzip >/dev/null 2>&1 || return 0
+find_stock_overlay() {
+	local fingerprint="$1"
+	local d manifest
 
-	local tmp_gz="${dst_gz}.tmp.${pkg}"
-	if gzip -n -9 -c "${dst}" > "${tmp_gz}" 2>/dev/null; then
-		mv -f "${tmp_gz}" "${dst_gz}"
-		chmod 0644 "${dst_gz}" 2>/dev/null || true
-	else
-		rm -f "${tmp_gz}" 2>/dev/null || true
-	fi
+	for d in "${overlay_root}"/*/; do
+		[ -d "${d}" ] || continue
+		[ -f "${d}${want}" ] || continue
+		manifest="${d}stock.sha256"
+		[ -f "${manifest}" ] || continue
+		if grep -Fqx "${fingerprint}" "${manifest}"; then
+			printf '%s\n' "${d}${want}"
+			return 0
+		fi
+	done
+
+	return 1
 }
-
-# --- main ---
 
 mode=""
 dst=""
@@ -139,39 +86,62 @@ else
 	die "target file not found: ${dst_js} or ${dst_lua} (is luci-app-mwan3 installed?)"
 fi
 
-installed_version="$(get_installed_version)"
+verify_gzip_peer
 
-overlay="$(pick_overlay "${installed_version}" "${want}" || true)"
-if [ -z "${overlay}" ]; then
-	die "no overlay found (Version='${installed_version:-unknown}')"
-fi
-
-if cmp -s "${overlay}" "${dst}"; then
-	regen_gz
-	echo "${pkg}: overlay $(basename "$(dirname "${overlay}")") already applied" >&2
+applied="$(find_applied_overlay || true)"
+if [ -n "${applied}" ]; then
+	echo "${pkg}: overlay $(basename "$(dirname "${applied}")") already applied; leaving it unchanged" >&2
 	exit 0
 fi
 
-# Keep the original backup across this package's own upgrades. If the target no
-# longer contains our field, luci-app-mwan3 was upgraded and the backup must be
-# refreshed before applying the overlay again.
-refresh_backup=0
-if [ ! -f "${backup}" ] || ! grep -q 'ipset_src' "${dst}"; then
-	refresh_backup=1
-	cp -fp "${dst}" "${backup}"
-fi
-if [ "${mode}" = "js" ] && [ -f "${dst_gz}" ] && \
-	{ [ "${refresh_backup}" = "1" ] || [ ! -f "${backup_gz}" ]; }; then
-	cp -fp "${dst_gz}" "${backup_gz}"
+command -v sha256sum >/dev/null 2>&1 || die "sha256sum not found"
+fingerprint="$(sha256_file "${dst}")"
+overlay="$(find_stock_overlay "${fingerprint}" || true)"
+if [ -z "${overlay}" ]; then
+	die "unsupported or modified ${want} (sha256=${fingerprint}); leaving it unchanged"
 fi
 
-if ! cp -fp "${overlay}" "${dst}"; then
-	die "failed to write ${dst}"
+suffix=".new.${pkg}.$$"
+tmp_dst="${dst}${suffix}"
+tmp_gz=""
+tmp_backup="${backup}${suffix}"
+tmp_backup_gz=""
+
+# shellcheck disable=SC2329 # Invoked indirectly by trap.
+cleanup() {
+	rm -f "${tmp_dst}" "${tmp_backup}" 2>/dev/null || true
+	[ -z "${tmp_gz}" ] || rm -f "${tmp_gz}" 2>/dev/null || true
+	[ -z "${tmp_backup_gz}" ] || rm -f "${tmp_backup_gz}" 2>/dev/null || true
+}
+trap cleanup EXIT
+trap 'exit 1' HUP INT TERM
+
+cp -fp "${overlay}" "${tmp_dst}" || die "failed to stage ${dst}"
+chmod 0644 "${tmp_dst}" 2>/dev/null || true
+cp -fp "${dst}" "${tmp_backup}" || die "failed to stage backup ${backup}"
+
+if [ "${mode}" = "js" ] && [ -f "${dst_gz}" ]; then
+	tmp_gz="${dst_gz}${suffix}"
+	tmp_backup_gz="${backup_gz}${suffix}"
+	gzip -n -9 -c "${tmp_dst}" > "${tmp_gz}" 2>/dev/null || \
+		die "failed to stage ${dst_gz}"
+	chmod 0644 "${tmp_gz}" 2>/dev/null || true
+	cp -fp "${dst_gz}" "${tmp_backup_gz}" || \
+		die "failed to stage backup ${backup_gz}"
 fi
 
-chmod 0644 "${dst}" 2>/dev/null || true
+mv -f "${tmp_backup}" "${backup}" || die "failed to install backup ${backup}"
+if [ -n "${tmp_backup_gz}" ]; then
+	mv -f "${tmp_backup_gz}" "${backup_gz}" || \
+		die "failed to install backup ${backup_gz}"
+elif [ -n "${backup_gz}" ]; then
+	rm -f "${backup_gz}"
+fi
 
-regen_gz
+mv -f "${tmp_dst}" "${dst}" || die "failed to install ${dst}"
+if [ -n "${tmp_gz}" ]; then
+	mv -f "${tmp_gz}" "${dst_gz}" || die "failed to install ${dst_gz}"
+fi
 
-echo "${pkg}: applied overlay $(basename "$(dirname "${overlay}")") (${mode}, Version='${installed_version:-unknown}')" >&2
+echo "${pkg}: applied overlay $(basename "$(dirname "${overlay}")") (${mode}, stock sha256=${fingerprint})" >&2
 exit 0
