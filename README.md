@@ -12,6 +12,7 @@ GL-BE3600 的厂商固件构建特定的软件包组合。
 | `swanpan-chnroute` | 下载、验证、持久化并恢复 IPv4 和 IPv6 CIDR ipset |
 | `swanpan-netseed` | 从本地预设文件创建、重新加载和卸载 ipset |
 | `swanpan-dldns` | 根据 OpenWrt 网络接口地址同步 Linode A 和 AAAA 记录 |
+| `swanpan-porthop` | 协调 WireGuard 公网 UDP 入口端口并管理 nftables 转发规则 |
 | `swanpan-chinadns-ng` | 安装与目标架构匹配的静态 ChinaDNS-NG、默认配置和 procd 服务 |
 | `swanpan-mwan3-patch` | 为 mwan3 规则增加源地址 IP 集合条件，以及路由器本机流量例外 |
 | `swanpan-luci-app-mwan3-patch` | 在 LuCI 的 mwan3 规则界面中增加对应配置项 |
@@ -27,8 +28,15 @@ netseed 预设会先于 mwan3 规则加载。软件包不依赖 mwan3，也不�
 
 `swanpan-dldns` 只安装固定提交的单文件 Shell 脚本和默认 `/etc/config/dldns`，不提供
 启动脚本或计划任务。软件包声明为 `PKGARCH:=all`，并依赖 `ca-bundle`、`curl` 和
-`jsonfilter`。默认配置保留空的 Linode 域名 ID，并使用 `@/root/linode.token` 作为令牌
-文件路径；安装后需要填写域名 ID、创建令牌文件，并至少配置一个 `list record`。
+`jsonfilter`。默认配置保留空的 Linode 域名 ID 和 DNS 区域名称，并使用
+`@/root/linode.token` 作为令牌文件路径；安装后需要填写域名 ID、DNS 区域名称，创建
+令牌文件，并至少配置一个 `list record`。
+
+`swanpan-porthop` 只安装固定提交的单文件 Bash 脚本到 `/usr/bin/porthop`，不包含上游
+Cloudflare Worker，也不提供启动脚本、计划任务或默认配置。软件包声明为
+`PKGARCH:=all`，并依赖 `bash`、`ca-bundle`、`curl`、`flock`、`jsonfilter`、`nftables`
+和 `wireguard-tools`。CLI 会在文件存在时默认加载 `/etc/porthop.env`；`conntrack` 是用于
+清理旧 UDP 连接跟踪条目的可选依赖。
 
 软件包默认安装四个空预设，供其他程序按主机地址动态填充：
 
@@ -114,10 +122,11 @@ Release 同时提供总 `SHA256SUMS`。Release 及其下载文件不会按 Actio
 ### 设备预设
 
 根目录的 `justfile` 提供按设备维护的构建配置。常规设备配方默认使用 OpenWrt 25.12.5。
-MT3600BE 和 MT3000 配方构建全部 7 个软件包；MT2500、Ubiquiti 和 Generic x86/64
-配方不构建 `swanpan-usb-wan-name`，仅构建其余 6 个软件包。XE300 和 E5800 配方分别
+MT3600BE 和 MT3000 配方构建全部 8 个软件包；MT2500、Ubiquiti 和 Generic x86/64
+配方不构建 `swanpan-usb-wan-name`，仅构建其余 7 个软件包。XE300 和 E5800 配方分别
 默认使用 OpenWrt 22.03.4 和 23.05.4；BE3600 配方默认使用 OpenWrt 23.05.6。这三个
-厂商固件配方都构建 `swanpan-chnroute`、`swanpan-netseed` 和 `swanpan-dldns`：
+厂商固件配方都构建 `swanpan-chnroute`、`swanpan-netseed`、`swanpan-dldns` 和
+`swanpan-porthop`：
 
 | 配方 | 设备 | Target | 软件包架构 |
 | --- | --- | --- | --- |
@@ -163,8 +172,8 @@ GL.iNet 的[XE300 stable 下载页](https://dl.gl-inet.com/router/xe300/stable)�
 列为 4.3.27，[固件版本表](https://www.gl-inet.com/en-gb/pages/firmware-versions)将其标注为
 Native OpenWrt 22.03.4。`XE300` 配方使用对应的官方 `ath79/nand` SDK，并且仅构建与
 目标架构及厂商蜂窝网络配置无关、声明为 `PKGARCH:=all` 的 `swanpan-chnroute`、
-`swanpan-netseed` 和 `swanpan-dldns`。产物写入 `dist/XE300/vendor-4.3.27/`；版本参数
-只改变 SDK，不改变厂商固件基线或产物目录。
+`swanpan-netseed`、`swanpan-dldns` 和 `swanpan-porthop`。产物写入
+`dist/XE300/vendor-4.3.27/`；版本参数只改变 SDK，不改变厂商固件基线或产物目录。
 
 GL.iNet 的[E5800 stable 下载页](https://dl.gl-inet.com/router/e5800/stable)将最新发布固件
 列为 4.8.5，[固件版本表](https://www.gl-inet.com/en-gb/pages/firmware-versions)将其标注为
@@ -173,17 +182,18 @@ OpenWrt SDK。`E5800` 配方借用同为
 `aarch64_cortex-a53` 的[官方
 `mediatek/filogic` SDK](https://downloads.openwrt.org/releases/23.05.4/targets/mediatek/filogic/)
 作为打包环境。这样做仅适用于不含目标相关二进制、声明为 `PKGARCH:=all` 的
-`swanpan-chnroute`、`swanpan-netseed` 和 `swanpan-dldns`，不能用于构建 E5800 固件、
-内核模块或目标相关软件包。产物写入 `dist/E5800/vendor-4.8.5/`。可以将版本号作为位置
-参数传给配方；该参数只改变兼容 SDK，不改变设备厂商固件的 OpenWrt 基线或产物目录。
+`swanpan-chnroute`、`swanpan-netseed`、`swanpan-dldns` 和 `swanpan-porthop`，不能用于
+构建 E5800 固件、内核模块或目标相关软件包。产物写入
+`dist/E5800/vendor-4.8.5/`。可以将版本号作为位置参数传给配方；该参数只改变兼容 SDK，
+不改变设备厂商固件的 OpenWrt 基线或产物目录。
 
 GL.iNet 的[固件版本表](https://www.gl-inet.com/en-us/pages/firmware-versions/)将 GL-BE3600
 最新发布固件列为 4.9.0，并标注 QSDK、OpenWrt 23.05；设备运行 OpenWrt
 23.05-SNAPSHOT，上游没有对应的 `ipq53xx` SDK。`BE3600` 配方默认借用官方 OpenWrt
 23.05.6 的 `mediatek/filogic` SDK，该版本是兼容打包环境，并非厂商固件标注的精确补丁
 版本。配方只打包与内核和 QSDK 无关、声明为 `PKGARCH:=all` 的
-`swanpan-chnroute`、`swanpan-netseed` 和 `swanpan-dldns`，不能用于编译内核模块或
-目标相关软件包。产物写入 `dist/BE3600/vendor-4.9.0/`。
+`swanpan-chnroute`、`swanpan-netseed`、`swanpan-dldns` 和 `swanpan-porthop`，不能用于
+编译内核模块或目标相关软件包。产物写入 `dist/BE3600/vendor-4.9.0/`。
 
 ### 使用 SDK 容器
 
@@ -193,7 +203,7 @@ GL.iNet 的[固件版本表](https://www.gl-inet.com/en-us/pages/firmware-versio
 ```sh
 OPENWRT_VERSION="25.12.2" \
 SDK_IMAGE="openwrt/sdk:mediatek-filogic-25.12.2" \
-PACKAGES="swanpan-netseed swanpan-dldns swanpan-chinadns-ng swanpan-mwan3-patch luci-app-mwan3-patch" \
+PACKAGES="swanpan-netseed swanpan-dldns swanpan-porthop swanpan-chinadns-ng swanpan-mwan3-patch luci-app-mwan3-patch" \
 OUTPUT_DIR="dist/25.12.2/mediatek-filogic" \
 CACHE_DIR="dist/.cache" \
 ./scripts/build-sdk.sh
@@ -214,6 +224,7 @@ CACHE_DIR="dist/.cache" \
   --cache-dir dist/.cache \
   --package swanpan-netseed \
   --package swanpan-dldns \
+  --package swanpan-porthop \
   --package swanpan-chinadns-ng \
   --package swanpan-mwan3-patch \
   --package luci-app-mwan3-patch \
@@ -248,6 +259,7 @@ make package/feeds/swanpan/swanpan-usb-wan-name/compile V=s
 make package/feeds/swanpan/swanpan-chnroute/compile V=s
 make package/feeds/swanpan/swanpan-netseed/compile V=s
 make package/feeds/swanpan/swanpan-dldns/compile V=s
+make package/feeds/swanpan/swanpan-porthop/compile V=s
 make package/feeds/swanpan/swanpan-chinadns-ng/compile V=s
 make package/feeds/swanpan/swanpan-mwan3-patch/compile V=s
 make package/feeds/swanpan/swanpan-luci-app-mwan3-patch/compile V=s
@@ -274,20 +286,22 @@ IPK：
 cat /etc/openwrt_release
 opkg print-architecture
 opkg update
-opkg install ca-bundle curl flock ipset jsonfilter
+opkg install bash ca-bundle curl flock ipset jsonfilter nftables wireguard-tools
 opkg install \
   /tmp/swanpan-chnroute_*.ipk \
   /tmp/swanpan-netseed_*.ipk \
-  /tmp/swanpan-dldns_*.ipk
+  /tmp/swanpan-dldns_*.ipk \
+  /tmp/swanpan-porthop_*.ipk
 ```
 
 不要使用 `--force-depends` 绕过依赖检查。以下安装命令适用于 OpenWrt 25.12。
 
-未配置 Swanpan 软件源时，将需要的 `.apk` 复制到路由器。USB WAN 重命名包可以单独安装：
+未配置 Swanpan 软件源时，将需要的 `.apk` 复制到路由器。以下软件包可以分别安装：
 
 ```sh
 apk add --allow-untrusted /tmp/swanpan-usb-wan-name-*.apk
 apk add --allow-untrusted /tmp/swanpan-dldns-*.apk
+apk add --allow-untrusted /tmp/swanpan-porthop-*.apk
 ```
 
 ChinaDNS-NG 依赖 chnroute 和 netseed，因此安装本地 APK 时需要同时提供三个软件包：
@@ -315,6 +329,7 @@ apk add swanpan-usb-wan-name
 apk add swanpan-chnroute
 apk add swanpan-netseed
 apk add swanpan-dldns
+apk add swanpan-porthop
 apk add swanpan-chinadns-ng
 apk add swanpan-mwan3-patch
 apk add swanpan-luci-app-mwan3-patch
@@ -332,6 +347,8 @@ OpenWrt 会自动启用并启动软件包中的 init 服务。将 netseed 预设
 更新 `swanpan-netseed` 时，需要同时核对版本标签、固定提交、归档 SHA-256、软件包
 版本和脚本内的 `NS_VERSION`。
 更新 `swanpan-dldns` 时，需要同时核对固定提交、归档 SHA-256、软件包版本和脚本内的
+`PROGRAM_VERSION`。
+更新 `swanpan-porthop` 时，需要同时核对固定提交、归档 SHA-256、软件包版本和脚本内的
 `PROGRAM_VERSION`。
 更新 `swanpan-chinadns-ng` 时，需要同时固定 Release 标签、资产名称、资产 SHA-256 和
 软件包版本，并核对所有架构映射。不要使用 `latest/download` 或跳过哈希校验。

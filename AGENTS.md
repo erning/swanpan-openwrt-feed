@@ -6,6 +6,9 @@ This repository is an OpenWrt 25.12 package feed. Each top-level `swanpan-*` dir
 
 - `swanpan-usb-wan-name/` installs a network hotplug script.
 - `swanpan-chnroute/` installs the route-data manager, init script, and bundled CIDR data.
+- `swanpan-netseed/` installs the ipset preset manager and init script.
+- `swanpan-dldns/` installs the Linode dynamic DNS shell client and configuration.
+- `swanpan-porthop/` installs the WireGuard UDP port hopping Bash client.
 - `swanpan-chinadns-ng/` installs a verified binary, configuration, and procd service.
 - `swanpan-mwan3-patch/` adds source-ipset matching to mwan3.
 - `swanpan-luci-app-mwan3-patch/` adds its field to versioned LuCI views.
